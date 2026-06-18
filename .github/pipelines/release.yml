@@ -5,18 +5,13 @@ companion_workflows:
 pipelines:
   release:
     stages:
-      - id: lint
-        workflow: .github/workflows/stage-lint.yml
-
-      - id: test
-        workflow: .github/workflows/stage-test.yml
-        needs:
-          - lint
+      - id: check
+        workflow: .github/workflows/ci.yml
 
       - id: build
         workflow: .github/workflows/stage-build.yml
         needs:
-          - test
+          - check
         outputs:
           - run_id
           - version

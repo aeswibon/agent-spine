@@ -2,6 +2,13 @@ name: Stage build
 
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      retention-days:
+        description: Artifact retention in days
+        type: number
+        required: false
+        default: 14
 
 concurrency:
   group: stage-build-${{ github.event.pull_request.number || github.ref }}
@@ -15,34 +22,87 @@ env:
 
 jobs:
   build:
-    name: Build release binary
-    runs-on: ubuntu-latest
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: agent-spine-aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            artifact: agent-spine-x86_64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: agent-spine-x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: agent-spine-aarch64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: agent-spine-x86_64-pc-windows-msvc.exe
+
     steps:
       - uses: actions/checkout@v6
 
-      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Install Protobuf Compiler (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install Protobuf Compiler (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+
+      - name: Install Protobuf Compiler (Windows)
+        if: runner.os == 'Windows'
+        run: choco install protoc
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2.9.1
 
       - name: Resolve package metadata
+        if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
         id: meta
+        shell: bash
         run: |
-          version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          version=$(grep '^version' agent-spine/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "git_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
-      - name: Run release build
-        run: cargo build --release
+      - name: Build release binary
+        run: cargo build --release -p agent-spine --target ${{ matrix.target }}
 
-      - name: Upload binary artifact
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            cp "target/${{ matrix.target }}/release/agent-spine.exe" "dist/${{ matrix.artifact }}"
+          else
+            cp "target/${{ matrix.target }}/release/agent-spine" "dist/${{ matrix.artifact }}"
+            chmod +x "dist/${{ matrix.artifact }}"
+          fi
+
+      - name: Adhoc sign (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          xattr -cr "dist/${{ matrix.artifact }}"
+          codesign --force --sign - "dist/${{ matrix.artifact }}"
+          codesign --verify --verbose "dist/${{ matrix.artifact }}"
+
+      - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: agent-spine-binary
-          path: target/release/agent-spine
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ inputs.retention-days || 14 }}
 
   export:
     name: Export build stage context
@@ -55,7 +115,7 @@ jobs:
       - name: Resolve package metadata
         id: meta
         run: |
-          version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          version=$(grep '^version' agent-spine/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - uses: aeswibon/pipeline-compose-export@v1.1.0
