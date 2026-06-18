@@ -143,10 +143,9 @@ impl<S: WorkflowState> Executor<S> {
 
             // Inject escalation hint into payload if needed
             let mut final_payload = next_payload;
-            if escalate
-                && let Some(obj) = final_payload.as_object_mut() {
-                    obj.insert("escalation_required".to_string(), Value::Bool(true));
-                }
+            if escalate && let Some(obj) = final_payload.as_object_mut() {
+                obj.insert("escalation_required".to_string(), Value::Bool(true));
+            }
 
             current_snapshot = current_snapshot
                 .transition(transition, final_payload)
