@@ -21,14 +21,22 @@ impl ConfidenceRouter {
 
     /// Evaluates the outcome of a node. If it's a verification node that failed,
     /// this bumps the failure count of the target node.
-    pub fn evaluate_transition(&mut self, source_node: &str, target_node: &str, payload: &Value) -> RouterAction {
+    pub fn evaluate_transition(
+        &mut self,
+        source_node: &str,
+        target_node: &str,
+        payload: &Value,
+    ) -> RouterAction {
         // Simple heuristic: If the payload contains a "success": false field, we treat it as a failure.
         let is_failure = payload.get("success").and_then(|v| v.as_bool()) == Some(false);
 
         if is_failure {
-            // We failed. Which node should be penalized? Usually the node we are transitioning to, 
+            // We failed. Which node should be penalized? Usually the node we are transitioning to,
             // assuming we are bouncing back to the Agent node to fix it.
-            let count = self.failure_counts.entry(target_node.to_owned()).or_insert(0);
+            let count = self
+                .failure_counts
+                .entry(target_node.to_owned())
+                .or_insert(0);
             *count += 1;
 
             if *count >= self.max_retries {

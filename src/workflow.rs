@@ -101,9 +101,7 @@ impl WorkflowDefinition {
             }
         }
 
-        Ok(ValidatedWorkflow {
-            definition: self,
-        })
+        Ok(ValidatedWorkflow { definition: self })
     }
 
     /// Return the workflow name.

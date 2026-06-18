@@ -27,16 +27,18 @@ fn duplicate_nodes_are_rejected() {
         "duplicate_nodes",
         1,
         "collect",
-        vec![WorkflowNode::agent("collect"), WorkflowNode::agent("collect")],
+        vec![
+            WorkflowNode::agent("collect"),
+            WorkflowNode::agent("collect"),
+        ],
         vec![],
     );
 
-    let error = workflow.validate().expect_err("duplicate node names must fail");
+    let error = workflow
+        .validate()
+        .expect_err("duplicate node names must fail");
 
-    assert_eq!(
-        error.to_string(),
-        "duplicate workflow node name: collect"
-    );
+    assert_eq!(error.to_string(), "duplicate workflow node name: collect");
 }
 
 #[test]
@@ -58,7 +60,9 @@ fn cycles_are_allowed_now() {
         vec![WorkflowEdge::new("a", "b"), WorkflowEdge::new("b", "a")],
     );
 
-    workflow.validate().expect("cycles are now allowed in state machines");
+    workflow
+        .validate()
+        .expect("cycles are now allowed in state machines");
 }
 
 #[test]
@@ -71,7 +75,9 @@ fn unknown_edges_are_rejected() {
         vec![WorkflowEdge::new("collect", "plan")],
     );
 
-    let error = workflow.validate().expect_err("unknown endpoints must fail");
+    let error = workflow
+        .validate()
+        .expect_err("unknown endpoints must fail");
 
     assert_eq!(
         error.to_string(),
@@ -89,10 +95,9 @@ fn missing_start_node_is_rejected() {
         vec![],
     );
 
-    let error = workflow.validate().expect_err("missing start node must fail");
+    let error = workflow
+        .validate()
+        .expect_err("missing start node must fail");
 
-    assert_eq!(
-        error.to_string(),
-        "start_node references unknown node: foo"
-    );
+    assert_eq!(error.to_string(), "start_node references unknown node: foo");
 }

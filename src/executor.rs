@@ -3,11 +3,11 @@ use std::sync::{Arc, Mutex};
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::state::StateError;
-use crate::{ExecutionId, StateSnapshot, Transition, ValidatedWorkflow, WorkflowState};
-use crate::supervisor::Supervisor;
 use crate::router::{ConfidenceRouter, RouterAction};
+use crate::state::StateError;
+use crate::supervisor::Supervisor;
 use crate::workflow::NodeKind;
+use crate::{ExecutionId, StateSnapshot, Transition, ValidatedWorkflow, WorkflowState};
 
 /// Orchestrates the execution of a ValidatedWorkflow.
 pub struct Executor<S: WorkflowState> {
@@ -19,7 +19,12 @@ pub struct Executor<S: WorkflowState> {
 
 impl<S: WorkflowState> Executor<S> {
     /// Create a new executor for the given workflow.
-    pub fn new(workflow: ValidatedWorkflow, state_store: Arc<Mutex<S>>, supervisor: Supervisor, router: ConfidenceRouter) -> Self {
+    pub fn new(
+        workflow: ValidatedWorkflow,
+        state_store: Arc<Mutex<S>>,
+        supervisor: Supervisor,
+        router: ConfidenceRouter,
+    ) -> Self {
         Self {
             workflow,
             state_store,
@@ -35,8 +40,13 @@ impl<S: WorkflowState> Executor<S> {
 
         // Persist initial state
         {
-            let mut store = self.state_store.lock().map_err(|_| ExecutorError::PoisonedLock)?;
-            store.append(current_snapshot.clone()).map_err(ExecutorError::State)?;
+            let mut store = self
+                .state_store
+                .lock()
+                .map_err(|_| ExecutorError::PoisonedLock)?;
+            store
+                .append(current_snapshot.clone())
+                .map_err(ExecutorError::State)?;
         }
 
         let definition = self.workflow.definition();
@@ -47,13 +57,20 @@ impl<S: WorkflowState> Executor<S> {
 
         // State machine execution
         loop {
-            let node = nodes.iter().find(|n| n.name() == current_node_name).expect("node must exist in workflow");
+            let node = nodes
+                .iter()
+                .find(|n| n.name() == current_node_name)
+                .expect("node must exist in workflow");
 
             // Execute node based on kind
             let next_payload = match node.kind() {
                 NodeKind::Agent => {
                     // Delegate to supervisor / IDE hook
-                    self.supervisor.delegate(current_node_name.clone(), current_snapshot.payload().clone())
+                    self.supervisor
+                        .delegate(
+                            current_node_name.clone(),
+                            current_snapshot.payload().clone(),
+                        )
                         .await
                         .map_err(|_| ExecutorError::SupervisorFailed)?
                 }
@@ -63,39 +80,60 @@ impl<S: WorkflowState> Executor<S> {
                 }
                 NodeKind::Checkpoint => {
                     // Pause and wait for Human-In-The-Loop
-                    self.supervisor.delegate(current_node_name.clone(), current_snapshot.payload().clone())
+                    self.supervisor
+                        .delegate(
+                            current_node_name.clone(),
+                            current_snapshot.payload().clone(),
+                        )
                         .await
                         .map_err(|_| ExecutorError::SupervisorFailed)?
                 }
             };
 
             let transition = Transition::new(
-                current_snapshot.transition_edge().map_or("START", |t| t.to()),
-                &current_node_name
+                current_snapshot
+                    .transition_edge()
+                    .map_or("START", |t| t.to()),
+                &current_node_name,
             );
 
             // Check Confidence Router before updating the current node
             let mut escalate = false;
 
             // Determine next node
-            let outgoing: Vec<_> = edges.iter().filter(|e| e.from() == current_node_name).collect();
+            let outgoing: Vec<_> = edges
+                .iter()
+                .filter(|e| e.from() == current_node_name)
+                .collect();
             if outgoing.is_empty() {
                 // Terminal node reached
                 current_snapshot = current_snapshot
                     .transition(transition, next_payload)
                     .map_err(|_| ExecutorError::InvalidTransition)?;
 
-                let mut store = self.state_store.lock().map_err(|_| ExecutorError::PoisonedLock)?;
-                store.append(current_snapshot).map_err(ExecutorError::State)?;
-                break; 
+                let mut store = self
+                    .state_store
+                    .lock()
+                    .map_err(|_| ExecutorError::PoisonedLock)?;
+                store
+                    .append(current_snapshot)
+                    .map_err(ExecutorError::State)?;
+                break;
             } else if outgoing.len() > 1 {
                 return Err(ExecutorError::MultipleOutgoingEdges(current_node_name));
             } else {
                 let next_node_name = outgoing[0].to().to_owned();
 
-                match self.router.evaluate_transition(&current_node_name, &next_node_name, &next_payload) {
+                match self.router.evaluate_transition(
+                    &current_node_name,
+                    &next_node_name,
+                    &next_payload,
+                ) {
                     RouterAction::Escalate(target) => {
-                        println!("Confidence Router: Escalating task for node '{}' to frontier model.", target);
+                        println!(
+                            "Confidence Router: Escalating task for node '{}' to frontier model.",
+                            target
+                        );
                         escalate = true;
                     }
                     RouterAction::Continue => {}
@@ -118,8 +156,13 @@ impl<S: WorkflowState> Executor<S> {
 
             // Persist state transition
             {
-                let mut store = self.state_store.lock().map_err(|_| ExecutorError::PoisonedLock)?;
-                store.append(current_snapshot.clone()).map_err(ExecutorError::State)?;
+                let mut store = self
+                    .state_store
+                    .lock()
+                    .map_err(|_| ExecutorError::PoisonedLock)?;
+                store
+                    .append(current_snapshot.clone())
+                    .map_err(ExecutorError::State)?;
             }
         }
 

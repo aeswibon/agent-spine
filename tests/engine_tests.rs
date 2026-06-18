@@ -1,13 +1,13 @@
+use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
-use serde_json::{json, Value};
 use tokio;
 
+use agent_spine::WorkflowState;
 use agent_spine::executor::Executor;
 use agent_spine::router::{ConfidenceRouter, RouterAction};
 use agent_spine::state::InMemoryStateStore;
 use agent_spine::supervisor::Supervisor;
 use agent_spine::workflow::{NodeKind, WorkflowDefinition, WorkflowEdge, WorkflowNode};
-use agent_spine::WorkflowState;
 
 #[tokio::test]
 async fn test_executor_linear_run() {
@@ -41,16 +41,20 @@ async fn test_executor_linear_run() {
     assert_eq!(pending, vec!["start_agent"]);
 
     // Resume the first node
-    supervisor.resume("start_agent", json!({ "step": 1 })).unwrap();
+    supervisor
+        .resume("start_agent", json!({ "step": 1 }))
+        .unwrap();
 
     // Wait for it to hit the second node
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    
+
     let pending = supervisor.pending_tasks();
     assert_eq!(pending, vec!["end_agent"]);
 
     // Resume the second node
-    supervisor.resume("end_agent", json!({ "step": 2 })).unwrap();
+    supervisor
+        .resume("end_agent", json!({ "step": 2 }))
+        .unwrap();
 
     // The execution should finish now
     let execution_id = exec_task.await.unwrap().unwrap();

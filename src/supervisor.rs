@@ -16,9 +16,13 @@ impl Supervisor {
     }
 
     /// Suspend execution and wait for the IDE agent to provide the next payload.
-    pub async fn delegate(&self, node_name: String, payload: Value) -> Result<Value, SupervisorError> {
+    pub async fn delegate(
+        &self,
+        node_name: String,
+        payload: Value,
+    ) -> Result<Value, SupervisorError> {
         let (tx, rx) = oneshot::channel();
-        
+
         {
             let mut pending = self.pending.lock().map_err(|_| SupervisorError::Poisoned)?;
             if pending.contains_key(&node_name) {
@@ -37,15 +41,19 @@ impl Supervisor {
     pub fn resume(&self, node_name: &str, result: Value) -> Result<(), SupervisorError> {
         let tx = {
             let mut pending = self.pending.lock().map_err(|_| SupervisorError::Poisoned)?;
-            pending.remove(node_name).ok_or_else(|| SupervisorError::NotPending(node_name.to_owned()))?
+            pending
+                .remove(node_name)
+                .ok_or_else(|| SupervisorError::NotPending(node_name.to_owned()))?
         };
 
-        tx.send(result).map_err(|_| SupervisorError::Dropped(node_name.to_owned()))
+        tx.send(result)
+            .map_err(|_| SupervisorError::Dropped(node_name.to_owned()))
     }
 
     /// Get a list of currently pending tasks waiting for IDE intervention.
     pub fn pending_tasks(&self) -> Vec<String> {
-        self.pending.lock()
+        self.pending
+            .lock()
             .map(|guard| guard.keys().cloned().collect())
             .unwrap_or_default()
     }

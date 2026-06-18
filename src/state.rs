@@ -57,7 +57,12 @@ impl FileStateStore {
         // but it might not implement Display directly.
         // Assuming we can serialize it to string. Let's just use JSON serialization or debug format for now.
         // Wait, ExecutionId doesn't have a public getter for Uuid right now, but we can serialize it to string.
-        let file_name = format!("{}.jsonl", serde_json::to_string(&execution_id).unwrap_or_else(|_| "unknown".to_string()).trim_matches('"'));
+        let file_name = format!(
+            "{}.jsonl",
+            serde_json::to_string(&execution_id)
+                .unwrap_or_else(|_| "unknown".to_string())
+                .trim_matches('"')
+        );
         self.base_dir.join(file_name)
     }
 }
@@ -65,7 +70,7 @@ impl FileStateStore {
 impl WorkflowState for FileStateStore {
     fn append(&mut self, snapshot: StateSnapshot) -> Result<(), StateError> {
         let path = self.file_path(snapshot.execution_id());
-        
+
         let history = self.history(snapshot.execution_id());
         let expected_sequence = u64::try_from(history.len()).map_err(|_| StateError::Overflow)?;
 
