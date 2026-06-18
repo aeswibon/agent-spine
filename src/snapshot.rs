@@ -76,6 +76,11 @@ impl StateSnapshot {
     }
 
     #[must_use]
+    pub const fn transition_edge(&self) -> Option<&Transition> {
+        self.transition.as_ref()
+    }
+
+    #[must_use]
     pub const fn payload(&self) -> &Value {
         &self.payload
     }

@@ -1,0 +1,15 @@
+stages:
+  - name: lint
+    workflow: lint.yml
+  
+  - name: test
+    workflow: test.yml
+    needs: [lint]
+
+  - name: build
+    workflow: build.yml
+    needs: [test]
+
+  - name: release
+    workflow: release.yml
+    needs: [build]

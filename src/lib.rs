@@ -1,6 +1,9 @@
-//! Core contracts for the Agent Spine workflow engine.
-
+pub mod executor;
 pub mod state;
+pub mod supervisor;
+pub mod server;
+pub mod router;
+pub mod workflow;
 
 mod execution;
 mod snapshot;
@@ -9,6 +12,10 @@ mod transition;
 pub use execution::ExecutionId;
 pub use snapshot::StateSnapshot;
 pub use transition::Transition;
+pub use workflow::{
+    NodeKind, ValidatedWorkflow, WorkflowDefinition, WorkflowEdge, WorkflowNode,
+    WorkflowValidationError,
+};
 
 /// Read and append immutable workflow snapshots.
 pub trait WorkflowState {

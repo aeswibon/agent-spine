@@ -1,0 +1,23 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download Binary
+        uses: actions/download-artifact@v4
+        with:
+          name: agent-spine-binary
+          path: ./agent-spine-binary
+          
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: ./agent-spine-binary/agent-spine
+          body_path: CHANGELOG.md

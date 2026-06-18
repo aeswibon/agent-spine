@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package agent_spine;
+
+// A service for the IDE agent to interact with the orchestrator.
+service SupervisorService {
+    // Resume a pending execution by providing the resulting payload.
+    rpc ResumeExecution (ResumeRequest) returns (ResumeResponse);
+    
+    // Poll or listen for pending tasks that require IDE intervention.
+    // In the future, this could be a streaming RPC.
+    // For now, simple unary is fine.
+    rpc GetPendingTasks (GetPendingTasksRequest) returns (GetPendingTasksResponse);
+}
+
+message ResumeRequest {
+    // The node name that was pending.
+    string node_name = 1;
+    // The resulting payload as a JSON string.
+    string payload_json = 2;
+}
+
+message ResumeResponse {
+    bool success = 1;
+    string error_message = 2;
+}
+
+message GetPendingTasksRequest {}
+
+message PendingTask {
+    string node_name = 1;
+}
+
+message GetPendingTasksResponse {
+    repeated PendingTask tasks = 1;
+}

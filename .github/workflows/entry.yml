@@ -1,0 +1,19 @@
+name: Pipeline Compose Orchestrator
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Pipeline Compose
+        uses: aeswibon/pipeline-compose-run@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          pipeline_file: .github/pipelines/pipeline.yml
