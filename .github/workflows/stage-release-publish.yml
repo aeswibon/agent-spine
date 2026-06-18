@@ -1,0 +1,49 @@
+name: Stage release publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Workflow run id from the build stage
+        type: string
+        required: true
+      version:
+        description: Crate version from the build stage
+        type: string
+        required: false
+      git_sha:
+        description: Commit SHA from the build stage
+        type: string
+        required: false
+
+concurrency:
+  group: stage-release-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v7
+        with:
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          name: agent-spine-binary
+          path: dist
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/agent-spine
+          body_path: CHANGELOG.md

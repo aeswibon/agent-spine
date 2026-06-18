@@ -1,0 +1,19 @@
+version: 2
+companion_workflows:
+  - .github/workflows/ci.yml
+  - .github/workflows/release.yml
+pipelines:
+  ci:
+    stages:
+      - id: lint
+        workflow: .github/workflows/stage-lint.yml
+
+      - id: test
+        workflow: .github/workflows/stage-test.yml
+        needs:
+          - lint
+
+      - id: build
+        workflow: .github/workflows/stage-build.yml
+        needs:
+          - test

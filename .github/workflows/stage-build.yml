@@ -1,0 +1,67 @@
+name: Stage build
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: stage-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build release binary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: arduino/setup-protoc@v3
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2.9.1
+
+      - name: Resolve package metadata
+        id: meta
+        run: |
+          version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "git_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Run release build
+        run: cargo build --release
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-spine-binary
+          path: target/release/agent-spine
+          if-no-files-found: error
+          retention-days: 14
+
+  export:
+    name: Export build stage context
+    needs: build
+    if: success()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve package metadata
+        id: meta
+        run: |
+          version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: aeswibon/pipeline-compose-export@v1.1.0
+        with:
+          stage_id: build
+          outputs: >-
+            {"run_id":"${{ github.run_id }}",
+             "version":"${{ steps.meta.outputs.version }}",
+             "git_sha":"${{ github.sha }}"}

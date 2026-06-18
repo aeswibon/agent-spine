@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-pipeline-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: write
+
+jobs:
+  run-pipeline:
+    name: Run CI pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: aeswibon/pipeline-compose-run@v1.1.0
+        with:
+          pipeline_file: .github/pipelines/ci.yml
+          github_token: ${{ github.token }}
