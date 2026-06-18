@@ -45,7 +45,7 @@ jobs:
             artifact: agent-spine-x86_64-pc-windows-msvc.exe
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Install Protobuf Compiler (Linux)
         if: runner.os == 'Linux'
@@ -97,47 +97,20 @@ jobs:
           codesign --verify --verbose "dist/${{ matrix.artifact }}"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}
           if-no-files-found: error
           retention-days: ${{ inputs.retention-days || 14 }}
 
-  frontend-build:
-    name: Build Frontend
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./dashboard
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-          
-      - name: Install dependencies
-        run: bun install
-        
-      - name: Build Svelte app
-        run: bun run build
-        
-      - name: Upload dashboard artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dashboard-static
-          path: dashboard/dist
-          retention-days: ${{ inputs.retention-days || 14 }}
-
   export:
     name: Export build stage context
-    needs: [build, frontend-build]
+    needs: build
     if: success()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Resolve package metadata
         id: meta

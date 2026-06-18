@@ -17,7 +17,7 @@ jobs:
     name: Run release pipeline
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: aeswibon/pipeline-compose-run@v1.1.0
         with:
