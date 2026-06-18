@@ -8,6 +8,7 @@ on:
 
 jobs:
   pipeline:
+    name: Run CI pipeline
     runs-on: ubuntu-latest
     permissions:
       actions: write
@@ -16,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Pipeline Compose
-        uses: aeswibon/pipeline-compose/packages/action-run@master
+        uses: aeswibon/pipeline-compose-run@v1.1.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           pipeline_file: .github/pipelines/pipeline.yml

@@ -14,8 +14,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Run build
         run: cargo build --release
-      - name: Export Binary
-        uses: aeswibon/pipeline-compose/packages/action-export@master
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
         with:
-          path: target/release/agent-spine
           name: agent-spine-binary
+          path: target/release/agent-spine
+          if-no-files-found: error
+          retention-days: 14

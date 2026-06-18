@@ -1,15 +1,27 @@
-stages:
-  - name: lint
-    workflow: lint.yml
-  
-  - name: test
-    workflow: test.yml
-    needs: [lint]
+version: 2
+companion_workflows:
+  - .github/workflows/entry.yml
+  - .github/workflows/lint.yml
+  - .github/workflows/test.yml
+  - .github/workflows/build.yml
+  - .github/workflows/release.yml
+pipelines:
+  ci:
+    stages:
+      - id: lint
+        workflow: .github/workflows/lint.yml
+      
+      - id: test
+        workflow: .github/workflows/test.yml
+        needs:
+          - lint
 
-  - name: build
-    workflow: build.yml
-    needs: [test]
+      - id: build
+        workflow: .github/workflows/build.yml
+        needs:
+          - test
 
-  - name: release
-    workflow: release.yml
-    needs: [build]
+      - id: release
+        workflow: .github/workflows/release.yml
+        needs:
+          - build
