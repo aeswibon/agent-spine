@@ -6,6 +6,8 @@ The project is **not** another terminal-bound agent crew. It targets a lightweig
 
 > **Status:** Phase 1–2 in progress. The execution engine, state stores, gRPC supervisor, confidence router, parallel fan-out/fan-in, and a Svelte dashboard are implemented. CLI `run`/`replay`/`inspect`, agent-brain routing, and production persistence adapters are not yet wired end-to-end.
 
+Planning docs and the repository audit live in [`docs/superpowers/`](docs/superpowers/) (local only, not committed).
+
 ## Why Agent Spine?
 
 Existing orchestration frameworks are capable, but local production workflows often hit the same operational costs:
@@ -21,34 +23,35 @@ Agent Spine treats these as execution-engine problems. Workflows should be decla
 
 Agent Spine is organized around four layers:
 
-1. **Information** — `agent-brain` selects scoped context for each node *(planned integration)*.
-2. **Structure** — Agent Spine decomposes work into typed, bounded transitions.
-3. **Reasoning depth** — optional candidate generation, debate, voting, and tree search trade compute for confidence *(planned)*.
-4. **Mechanical verification** — compilers, tests, linters, schemas, and reward models gate state transitions *(partial)*.
+```mermaid
+flowchart TB
+    subgraph layers["Execution layers"]
+        info["Information<br/>agent-brain context routing<br/><i>planned</i>"]
+        structure["Structure<br/>typed bounded transitions"]
+        reasoning["Reasoning depth<br/>debate · voting · search<br/><i>planned</i>"]
+        verify["Mechanical verification<br/>compile · test · lint · schema<br/><i>partial</i>"]
+    end
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  Dashboard (Svelte + Connect/gRPC-Web)                      │
-│  list executions · view history · resume pending tasks      │
-└───────────────────────────┬─────────────────────────────────┘
-                            │ gRPC / gRPC-Web
-┌───────────────────────────▼─────────────────────────────────┐
-│  Supervisor API          │  Dashboard API                     │
-│  resume · pending tasks  │  list · history                    │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────────┐
-│  Executor                                                   │
-│  state machine · parallel fan-out/fan-in · retries/backoff  │
-│  ApprovalGate · ConfidenceRouter escalation                 │
-└───────┬───────────────────────────────┬─────────────────────┘
-        │                               │
-┌───────▼────────┐              ┌───────▼────────┐
-│  Supervisor  │              │  WorkflowState │
-│  IDE hooks   │              │  InMemory      │
-│  pause/resume│              │  File (JSONL)  │
-└──────────────┘              │  SQLite        │
-                              └────────────────┘
+    info --> structure --> reasoning --> verify
+```
+
+### System overview
+
+```mermaid
+flowchart TB
+    dashboard["Dashboard<br/>Svelte · Connect · gRPC-Web"]
+    sup_api["Supervisor API<br/>resume · pending tasks"]
+    dash_api["Dashboard API<br/>list · history"]
+    executor["Executor<br/>state machine · fan-out/fan-in<br/>retries · ApprovalGate · router"]
+    supervisor["Supervisor<br/>IDE hooks · pause/resume"]
+    state["WorkflowState<br/>InMemory · JSONL · SQLite"]
+
+    dashboard -->|gRPC-Web| sup_api
+    dashboard -->|gRPC-Web| dash_api
+    sup_api --> executor
+    dash_api --> state
+    executor --> supervisor
+    executor --> state
 ```
 
 ### Core modules
@@ -66,6 +69,32 @@ Agent Spine is organized around four layers:
 Rust is the primary implementation language for predictable resource use, safe concurrency, durable local execution, and a single distributable binary. Model providers, IDE integrations, and persistence backends remain behind adapter traits.
 
 ## Current capabilities
+
+```mermaid
+flowchart LR
+    subgraph done["Implemented"]
+        yaml["YAML workflows"]
+        snap["Append-only snapshots"]
+        parallel["Parallel fan-out/fan-in"]
+        hitl["ApprovalGate + resume"]
+        retry["Retries + backoff"]
+        router_done["Confidence router"]
+        stores["InMemory · JSONL · SQLite"]
+        grpc["gRPC + gRPC-Web"]
+        ui["Svelte dashboard"]
+        cicd["pipeline-compose CI"]
+    end
+
+    subgraph todo["Not yet"]
+        cli_run["CLI run/replay/inspect"]
+        serve_exec["Executor in serve"]
+        brain["agent-brain routing"]
+        pg["Postgres / Redis stores"]
+        otel["OpenTelemetry export"]
+        ws["WebSocket live DAG"]
+        ide["Cursor / Claude adapters"]
+    end
+```
 
 ### Implemented
 
@@ -92,80 +121,18 @@ Rust is the primary implementation language for predictable resource use, safe c
 - Native Claude Code / Cursor IDE adapters
 - Example workflow YAML files in-repo
 
-## Repository audit
-
-Audit date: 2026-06-18. Compared against the Superpower Orchestrator implementation plan and the next-phase roadmap.
-
-### Phase progress
-
-| Phase | Goal | Status | Notes |
-|-------|------|--------|-------|
-| **1 — Executable Core** | YAML, DAG execution, snapshots, CLI | **~70%** | Engine + stores + tests exist; CLI lacks `run`/`replay`/`inspect` |
-| **2 — Native IDE Supervision** | Supervisor hook protocol, pause/resume | **~60%** | gRPC supervisor works; no JSONL hook protocol or IDE-specific adapters |
-| **3 — Agent-Brain Integration** | Route nodes through agent-brain | **0%** | Not started |
-| **4 — Inference Scaling** | Debate, voting, verification loops | **~15%** | `ConfidenceRouter` + `Verify` node kind only |
-| **5 — Production Hardening** | Migrations, OTel, leases, redaction | **~25%** | SQLite store + tracing; no OTel, cancellation, or idempotency keys |
-
-### Roadmap feature assessment
-
-| Feature | Current state | Gap |
-|---------|---------------|-----|
-| **Parallel fan-out / fan-in** | Working in `executor.rs` via edge topology | No explicit fork/join node kinds; payload merge is shallow JSON merge |
-| **Production state stores** | SQLite + JSONL file store | Postgres (`sqlx` JSONB) and Redis adapters missing |
-| **Human-in-the-loop wait states** | `ApprovalGate` + supervisor resume | 30s supervisor timeout; no webhook/event on suspend; not indefinite wait |
-| **Observability / tracing** | `tracing` instrumentation on key paths | No `tracing-opentelemetry`; no Jaeger/Datadog export |
-| **Retries with backoff** | Hardcoded 3 retries, exponential backoff in executor | Not declarative in workflow YAML; failures still recorded per retry attempt in supervisor path |
-| **Live dashboard** | Svelte + gRPC-Web dashboard exists | Polling-based; no WebSocket stream; executor not connected to server |
-
-### Strengths
-
-- Clean trait boundaries (`WorkflowState`, supervisor delegation)
-- Immutable snapshot model with sequence enforcement across all stores
-- Parallel execution tests cover linear, fan-out/fan-in, approval gates, and router escalation
-- gRPC API surface is stable and dashboard-ready
-- CI matches the `agent-brain` repo pattern (`pipeline-compose`, stage builds, cross-platform matrix)
-
-### Risks and gaps
-
-1. **`serve` does not run workflows** — the dashboard can list history and resume tasks, but nothing starts an `Executor` from the server process today.
-2. **Duplicate gRPC layer** — `server.rs` duplicates supervisor handlers already in `api.rs` and is unused.
-3. **No sample workflows** — no checked-in YAML under `examples/` for onboarding.
-4. **Supervisor timeout** — 30-second default conflicts with true HITL “wait indefinitely” semantics.
-5. **Escalation is advisory** — router sets `escalation_required` in payload but does not invoke a frontier provider.
-6. **README was stale** — previously described an early skeleton; implementation has moved significantly.
-
-### Recommended next steps
-
-Priority order for the highest capability boost:
-
-1. **Wire executor into `serve`** — load YAML, start execution, persist to SQLite, expose live state to dashboard.
-2. **CLI `run` / `inspect` / `replay`** — complete Phase 1 exit criteria.
-3. **Formalize HITL** — indefinite wait on `ApprovalGate`, webhook/gRPC event on suspend, configurable timeout elsewhere.
-4. **Declarative `RetryPolicy`** on `WorkflowNode` in YAML.
-5. **OpenTelemetry** — export spans for state transitions and node execution.
-6. **Postgres adapter** — when concurrent workflow volume exceeds SQLite comfort zone.
-
 ## Project layout
 
-```text
-.
-├── agent-spine/              # Rust workspace member (engine + CLI)
-│   ├── proto/                # gRPC service definitions
-│   ├── src/
-│   │   ├── workflow.rs       # YAML schema + validation
-│   │   ├── executor.rs       # State machine + parallel execution
-│   │   ├── supervisor.rs     # IDE pause/resume
-│   │   ├── router.rs         # Confidence routing
-│   │   ├── state.rs          # InMemory, File, SQLite stores
-│   │   ├── api.rs            # gRPC service implementations
-│   │   └── main.rs           # CLI: status, validate, serve
-│   └── tests/                # Engine, workflow, state tests
-├── dashboard/                # Svelte + Connect/gRPC-Web UI
-├── .github/
-│   ├── pipelines/            # pipeline-compose stage definitions
-│   └── workflows/            # CI, release, multi-platform build
-├── Cargo.toml                # Workspace root
-└── README.md
+```mermaid
+flowchart TB
+    root["agent-spine repo"]
+    root --> engine["agent-spine/<br/>Rust engine + CLI"]
+    root --> dash["dashboard/<br/>Svelte UI"]
+    root --> gh[".github/<br/>CI + release pipelines"]
+
+    engine --> proto["proto/"]
+    engine --> src["src/<br/>workflow · executor · supervisor<br/>router · state · api"]
+    engine --> tests["tests/"]
 ```
 
 ## Getting started
@@ -209,48 +176,6 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-## Delivery phases
-
-### Phase 1 — Executable Core
-
-- Define versioned workflow schemas
-- Parse and validate YAML workflow definitions
-- Implement deterministic DAG execution
-- Persist immutable snapshots and edge transitions
-- Add `run`, `validate`, `inspect`, and `replay` CLI commands
-
-**Exit criteria:** a sample workflow executes locally and can be replayed to any transition.
-
-### Phase 2 — Native IDE Supervision
-
-- Define a stable supervisor hook protocol over JSON Lines
-- Add Claude Code and Cursor adapters
-- Stream node status and structured intervention requests
-- Support pause, approve, reject, retry, and resume operations
-
-**Exit criteria:** a developer can observe and intervene without leaving the IDE agent flow.
-
-### Phase 3 — Agent-Brain Integration
-
-- Route each node through `agent-brain` before execution
-- Record context IDs and token budgets in snapshot metadata
-- Feed outcome usefulness back to the context router
-- Prevent secrets and oversized payloads from entering persisted state
-
-### Phase 4 — Inference Scaling and Verification
-
-- Configurable candidate generation and self-consistency voting
-- Implementer/reviewer debate policies
-- Compiler, test, lint, and schema verification loops
-- Confidence routing after bounded repeated failures
-
-### Phase 5 — Production Hardening
-
-- SQLite migrations, crash recovery, Postgres adapter
-- Cancellation, leases, idempotency, and concurrency limits
-- OpenTelemetry-compatible traces and local visualization
-- Redaction policies, signed audit records, and plugin capability controls
-
 ## Key invariants
 
 1. State snapshots are immutable and append-only.
@@ -262,18 +187,7 @@ cargo test --workspace --all-features
 7. Provider-specific behavior remains behind adapter traits.
 8. Replay creates a new execution branch; it does not rewrite history.
 
-## First public milestone
-
-The first milestone proves one narrow path:
-
-1. Load a YAML workflow.
-2. Validate nodes, edges, and typed input/output schemas.
-3. Execute mock agent nodes supervised via gRPC.
-4. Persist each state transition to SQLite.
-5. Inspect execution history from the CLI and dashboard.
-6. Replay from a selected snapshot into a new execution branch.
-
-This deliberately excludes MCTS, frontier escalation, and full IDE integrations until the deterministic state model is stable.
+See [`docs/superpowers/IMPLEMENTATION.md`](docs/superpowers/IMPLEMENTATION.md) for delivery phases and [`docs/superpowers/AUDIT.md`](docs/superpowers/AUDIT.md) for the full repository audit and roadmap.
 
 ## Contributing
 
