@@ -74,18 +74,24 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Serve { db, port } => {
             info!("Starting agent-spine gRPC server on port {}", port);
-            
+
             let store = agent_spine::state::SqliteStateStore::new(db)?;
             let store = std::sync::Arc::new(std::sync::Mutex::new(store));
-            
+
             let supervisor = agent_spine::supervisor::Supervisor::new();
-            
+
             let dashboard_api = agent_spine::api::DashboardApi { store };
             let supervisor_api = agent_spine::api::SupervisorApi { supervisor };
 
-            let dashboard_svc = agent_spine::api::pb::dashboard_service_server::DashboardServiceServer::new(dashboard_api);
-            let supervisor_svc = agent_spine::api::pb::supervisor_service_server::SupervisorServiceServer::new(supervisor_api);
-            
+            let dashboard_svc =
+                agent_spine::api::pb::dashboard_service_server::DashboardServiceServer::new(
+                    dashboard_api,
+                );
+            let supervisor_svc =
+                agent_spine::api::pb::supervisor_service_server::SupervisorServiceServer::new(
+                    supervisor_api,
+                );
+
             let addr = format!("0.0.0.0:{}", port).parse()?;
             info!("Listening on grpc://{}", addr);
 
@@ -103,7 +109,7 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                 .add_service(supervisor_svc)
                 .serve(addr)
                 .await?;
-                
+
             Ok(())
         }
     }

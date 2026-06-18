@@ -1,9 +1,9 @@
+use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use tonic::{Request, Response, Status};
-use serde_json::Value;
 
-use crate::{ExecutionId, WorkflowState};
 use crate::supervisor::Supervisor;
+use crate::{ExecutionId, WorkflowState};
 
 pub mod pb {
     tonic::include_proto!("agent_spine");
@@ -34,7 +34,10 @@ impl DashboardService for DashboardApi {
                 let execution_ids = ids.iter().map(|id| id.to_string()).collect();
                 Ok(Response::new(ListExecutionsResponse { execution_ids }))
             }
-            Err(e) => Err(Status::internal(format!("Failed to list executions: {}", e))),
+            Err(e) => Err(Status::internal(format!(
+                "Failed to list executions: {}",
+                e
+            ))),
         }
     }
 

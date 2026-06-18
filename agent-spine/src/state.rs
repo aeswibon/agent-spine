@@ -8,8 +8,6 @@ use thiserror::Error;
 
 use crate::{ExecutionId, StateSnapshot, WorkflowState};
 
-
-
 /// Append-only state adapter used by tests and early engine development.
 #[derive(Default)]
 pub struct InMemoryStateStore {
@@ -116,12 +114,11 @@ impl WorkflowState for FileStateStore {
         if let Ok(entries) = fs::read_dir(&self.base_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        if let Ok(id) = serde_json::from_str::<ExecutionId>(&format!("\"{}\"", stem)) {
-                            ids.push(id);
-                        }
-                    }
+                if path.extension().and_then(|s| s.to_str()) == Some("jsonl")
+                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                    && let Ok(id) = serde_json::from_str::<ExecutionId>(&format!("\"{}\"", stem))
+                {
+                    ids.push(id);
                 }
             }
         }
@@ -213,7 +210,9 @@ impl WorkflowState for SqliteStateStore {
 
     fn list_executions(&self) -> Result<Vec<ExecutionId>, StateError> {
         let mut ids = Vec::new();
-        let mut stmt = self.conn.prepare("SELECT DISTINCT execution_id FROM snapshots")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT execution_id FROM snapshots")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         for row in rows {
             let id_str = row?;
