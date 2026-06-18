@@ -51,8 +51,14 @@ impl<S: WorkflowState> Executor<S> {
     }
 
     /// Execute the workflow from start to finish.
+    #[tracing::instrument(skip(self, initial_payload))]
     pub async fn run(&mut self, initial_payload: Value) -> Result<ExecutionId, ExecutorError> {
         let execution_id = ExecutionId::new();
+        tracing::info!(
+            "Starting execution of workflow '{}'",
+            self.workflow.definition().name()
+        );
+
         let mut current_snapshot = StateSnapshot::initial(execution_id, initial_payload);
 
         // Persist initial state
@@ -91,18 +97,49 @@ impl<S: WorkflowState> Executor<S> {
                 let supervisor = self.supervisor.clone();
                 let payload = current_snapshot.payload().clone();
 
+                tracing::debug!("Spawning task for node '{}'", node_name);
+
                 join_set.spawn(async move {
                     // Execute node based on kind
                     let next_payload = match node_kind {
-                        NodeKind::Agent => supervisor
-                            .delegate(node_name.clone(), payload)
-                            .await
-                            .map_err(|_| ExecutorError::SupervisorFailed)?,
+                        NodeKind::Agent | NodeKind::Checkpoint => {
+                            let mut retries = 0;
+                            let max_retries = 3;
+                            loop {
+                                match supervisor
+                                    .delegate(node_name.clone(), payload.clone())
+                                    .await
+                                {
+                                    Ok(res) => break res,
+                                    Err(e) => {
+                                        if retries >= max_retries {
+                                            tracing::error!(
+                                                "Node '{}' failed after {} retries: {}",
+                                                node_name,
+                                                max_retries,
+                                                e
+                                            );
+                                            return Err(ExecutorError::SupervisorFailed);
+                                        }
+                                        retries += 1;
+                                        let backoff_ms = 100 * 2u64.pow(retries as u32);
+                                        tracing::warn!(
+                                            "Node '{}' failed: {}. Retrying ({}/{}) in {}ms...",
+                                            node_name,
+                                            e,
+                                            retries,
+                                            max_retries,
+                                            backoff_ms
+                                        );
+                                        tokio::time::sleep(std::time::Duration::from_millis(
+                                            backoff_ms,
+                                        ))
+                                        .await;
+                                    }
+                                }
+                            }
+                        }
                         NodeKind::Verify => payload,
-                        NodeKind::Checkpoint => supervisor
-                            .delegate(node_name.clone(), payload)
-                            .await
-                            .map_err(|_| ExecutorError::SupervisorFailed)?,
                         NodeKind::ApprovalGate => {
                             let result = supervisor
                                 .delegate(node_name.clone(), payload)
@@ -110,6 +147,10 @@ impl<S: WorkflowState> Executor<S> {
                                 .map_err(|_| ExecutorError::SupervisorFailed)?;
 
                             if result.get("approved").and_then(Value::as_bool) != Some(true) {
+                                tracing::error!(
+                                    "Human rejected execution at ApprovalGate '{}'",
+                                    node_name
+                                );
                                 return Err(ExecutorError::ExecutionRejected);
                             }
                             result
@@ -122,8 +163,11 @@ impl<S: WorkflowState> Executor<S> {
             let mut branch_results = Vec::new();
             while let Some(res) = join_set.join_next().await {
                 let (node_name, next_payload) = res.expect("task panicked")?;
+                tracing::debug!("Node '{}' resolved", node_name);
                 branch_results.push((node_name, next_payload));
             }
+
+            tracing::info!("Fan-in sync complete for level: {:?}", current_node_names);
 
             // Merge payloads from all parallel branches
             let mut final_payload = current_snapshot.payload().clone();
@@ -150,8 +194,9 @@ impl<S: WorkflowState> Executor<S> {
                         .evaluate_transition(node_name, &next_node_name, payload)
                     {
                         RouterAction::Escalate(target) => {
-                            println!(
-                                "Confidence Router: Escalating task for node '{target}' to frontier model."
+                            tracing::warn!(
+                                "Confidence Router: Escalating task for node '{}' to frontier model.",
+                                target
                             );
                             escalate = true;
                         }
@@ -168,6 +213,7 @@ impl<S: WorkflowState> Executor<S> {
 
             if next_node_names.is_empty() {
                 // All branches reached terminal nodes
+                tracing::info!("Execution {:?} reached terminal state", execution_id);
                 let transition = Transition::new(current_node_names.join(", "), "END");
 
                 current_snapshot = current_snapshot

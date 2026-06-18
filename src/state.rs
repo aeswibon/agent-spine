@@ -139,6 +139,7 @@ impl SqliteStateStore {
 }
 
 impl WorkflowState for SqliteStateStore {
+    #[tracing::instrument(skip(self, snapshot), fields(execution_id = ?snapshot.execution_id(), seq = snapshot.sequence()))]
     fn append(&mut self, snapshot: StateSnapshot) -> Result<(), StateError> {
         // We use the JSON-serialized execution_id since it wraps a UUID.
         let execution_id_str = serde_json::to_string(&snapshot.execution_id())
