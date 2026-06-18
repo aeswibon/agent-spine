@@ -65,3 +65,32 @@ fn state_store_rejects_out_of_order_snapshots() {
         "snapshot sequence mismatch: expected 0, received 1"
     );
 }
+
+#[test]
+fn sqlite_store_preserves_snapshot_history() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("agent_spine.db");
+
+    let mut store =
+        agent_spine::state::SqliteStateStore::new(&db_path).expect("failed to create sqlite store");
+
+    let execution_id = ExecutionId::new();
+    let snapshot1 = StateSnapshot::initial(execution_id, json!({"step": 0}));
+    let snapshot2 = snapshot1
+        .transition(
+            agent_spine::Transition::new("one", "two"),
+            json!({"step": 1}),
+        )
+        .unwrap();
+
+    store
+        .append(snapshot1.clone())
+        .expect("append initial state");
+    store.append(snapshot2.clone()).expect("append next state");
+
+    let history = store.history(execution_id);
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].sequence(), 0);
+    assert_eq!(history[1].sequence(), 1);
+    assert_eq!(history[1].payload()["step"], 1);
+}

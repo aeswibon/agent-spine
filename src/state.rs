@@ -3,6 +3,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 
+use rusqlite::{Connection, params};
 use thiserror::Error;
 
 use crate::{ExecutionId, StateSnapshot, WorkflowState};
@@ -110,6 +111,91 @@ impl WorkflowState for FileStateStore {
     }
 }
 
+/// A SQLite-backed state store for robust, atomic persistence.
+pub struct SqliteStateStore {
+    conn: Connection,
+}
+
+impl SqliteStateStore {
+    /// Create a new SQLite-backed state store.
+    ///
+    /// # Errors
+    /// Returns an error if the database connection fails or tables cannot be created.
+    pub fn new(path: impl AsRef<std::path::Path>) -> Result<Self, StateError> {
+        let conn = Connection::open(path)?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                execution_id TEXT NOT NULL,
+                sequence INTEGER NOT NULL,
+                snapshot_data TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(execution_id, sequence)
+            )",
+            [],
+        )?;
+        Ok(Self { conn })
+    }
+}
+
+impl WorkflowState for SqliteStateStore {
+    fn append(&mut self, snapshot: StateSnapshot) -> Result<(), StateError> {
+        // We use the JSON-serialized execution_id since it wraps a UUID.
+        let execution_id_str = serde_json::to_string(&snapshot.execution_id())
+            .unwrap_or_else(|_| "unknown".to_string())
+            .trim_matches('"')
+            .to_string();
+
+        let mut stmt = self
+            .conn
+            .prepare("SELECT COUNT(*) FROM snapshots WHERE execution_id = ?1")?;
+        let count_i64: i64 = stmt.query_row([&execution_id_str], |row| row.get(0))?;
+        let expected_sequence = count_i64 as u64;
+
+        if snapshot.sequence() != expected_sequence {
+            return Err(StateError::InvalidSequence {
+                expected: expected_sequence,
+                actual: snapshot.sequence(),
+            });
+        }
+
+        let json = serde_json::to_string(&snapshot).map_err(StateError::Serialization)?;
+        self.conn.execute(
+            "INSERT INTO snapshots (execution_id, sequence, snapshot_data) VALUES (?1, ?2, ?3)",
+            params![execution_id_str, snapshot.sequence(), json],
+        )?;
+
+        Ok(())
+    }
+
+    fn history(&self, execution_id: ExecutionId) -> Vec<StateSnapshot> {
+        let execution_id_str = serde_json::to_string(&execution_id)
+            .unwrap_or_else(|_| "unknown".to_string())
+            .trim_matches('"')
+            .to_string();
+
+        let mut history = Vec::new();
+
+        if let Ok(mut stmt) = self.conn.prepare(
+            "SELECT snapshot_data FROM snapshots WHERE execution_id = ?1 ORDER BY sequence ASC",
+        ) {
+            let snapshot_iter = stmt.query_map([&execution_id_str], |row| row.get::<_, String>(0));
+
+            if let Ok(iter) = snapshot_iter {
+                for json_res in iter {
+                    if let Ok(json) = json_res {
+                        if let Ok(snapshot) = serde_json::from_str(&json) {
+                            history.push(snapshot);
+                        }
+                    }
+                }
+            }
+        }
+
+        history
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum StateError {
     #[error("snapshot sequence mismatch: expected {expected}, received {actual}")]
@@ -120,4 +206,6 @@ pub enum StateError {
     Io(#[from] std::io::Error),
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
+    #[error("sqlite error: {0}")]
+    Sqlite(#[from] rusqlite::Error),
 }
