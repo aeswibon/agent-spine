@@ -2,8 +2,8 @@ use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use tonic::{Request, Response, Status};
 
-use crate::supervisor::Supervisor;
 use crate::WorkflowState;
+use crate::supervisor::Supervisor;
 
 pub mod pb {
     tonic::include_proto!("agent_spine");

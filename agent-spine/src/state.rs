@@ -247,9 +247,12 @@ pub struct PostgresStateStore {
 impl PostgresStateStore {
     /// Create a new Postgres-backed state store and ensure tables exist.
     pub async fn new(connection_url: &str) -> Result<Self, StateError> {
-        let pool = sqlx::PgPool::connect(connection_url)
-            .await
-            .map_err(|e| StateError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let pool = sqlx::PgPool::connect(connection_url).await.map_err(|e| {
+            StateError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS snapshots (
@@ -263,7 +266,12 @@ impl PostgresStateStore {
         )
         .execute(&pool)
         .await
-        .map_err(|e| StateError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        .map_err(|e| {
+            StateError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         Ok(Self { pool })
     }
@@ -280,11 +288,12 @@ impl WorkflowState for PostgresStateStore {
 
         let expected_sequence = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM snapshots WHERE execution_id = $1")
-                    .bind(&execution_id_str)
-                    .fetch_one(&self.pool)
-                    .await
-                    .unwrap_or((0,));
+                let count: (i64,) =
+                    sqlx::query_as("SELECT COUNT(*) FROM snapshots WHERE execution_id = $1")
+                        .bind(&execution_id_str)
+                        .fetch_one(&self.pool)
+                        .await
+                        .unwrap_or((0,));
                 count.0 as u64
             })
         });
@@ -342,7 +351,7 @@ impl WorkflowState for PostgresStateStore {
 
     fn list_executions(&self) -> Result<Vec<ExecutionId>, StateError> {
         let mut ids = Vec::new();
-        
+
         let rows: Result<Vec<(String,)>, _> = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 sqlx::query_as("SELECT DISTINCT execution_id FROM snapshots")

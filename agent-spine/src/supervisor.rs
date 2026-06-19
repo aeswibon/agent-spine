@@ -51,7 +51,10 @@ impl Supervisor {
                 }
             }
         } else {
-            tracing::info!("Waiting indefinitely for human intervention on '{}'", node_name);
+            tracing::info!(
+                "Waiting indefinitely for human intervention on '{}'",
+                node_name
+            );
             match rx.await {
                 Ok(res) => Ok(res),
                 Err(_) => {

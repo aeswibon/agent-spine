@@ -6,7 +6,6 @@ The project is **not** another terminal-bound agent crew. It targets a lightweig
 
 > **Status:** Phase 1–2 in progress. The execution engine, state stores, gRPC supervisor, confidence router, agent-brain MCP bridge, parallel fan-out/fan-in, and a Svelte dashboard are implemented. CLI `run`/`replay`/`inspect` and production persistence adapters are not yet wired end-to-end.
 
-Planning docs and the repository audit live in [`docs/superpowers/`](docs/superpowers/) (local only, not committed).
 
 ## Why Agent Spine?
 

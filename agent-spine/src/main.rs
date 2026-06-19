@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-use agent_spine::mcp_bridge::{McpBridge, RouteLimits};
 use agent_spine::WorkflowDefinition;
+use agent_spine::mcp_bridge::{McpBridge, RouteLimits};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -91,7 +91,7 @@ enum BrainCommand {
     Status,
 }
 
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Registry};
+use tracing_subscriber::{Registry, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() {
@@ -100,14 +100,14 @@ async fn main() {
             .with_tonic()
             .build()
             .expect("Failed to build OTLP exporter");
-        
+
         let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
             .with_batch_exporter(exporter)
             .build();
-            
+
         use opentelemetry::trace::TracerProvider;
         let tracer = provider.tracer("agent-spine");
-        
+
         opentelemetry::global::set_tracer_provider(provider);
 
         let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
@@ -147,13 +147,25 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             // Prerequisites
             if !force {
                 let mut warnings = Vec::new();
-                if std::process::Command::new("protoc").arg("--version").output().is_err() {
-                    warnings.push("protoc — gRPC codegen (https://grpc.io/docs/protoc-installation/)");
+                if std::process::Command::new("protoc")
+                    .arg("--version")
+                    .output()
+                    .is_err()
+                {
+                    warnings
+                        .push("protoc — gRPC codegen (https://grpc.io/docs/protoc-installation/)");
                 }
-                if std::process::Command::new("bun").arg("--version").output().is_err() {
+                if std::process::Command::new("bun")
+                    .arg("--version")
+                    .output()
+                    .is_err()
+                {
                     warnings.push("bun — dashboard dev server (https://bun.sh)");
                 }
-                if std::process::Command::new("agent-brain").arg("--version").output().is_err()
+                if std::process::Command::new("agent-brain")
+                    .arg("--version")
+                    .output()
+                    .is_err()
                     && std::env::var("BRAIN_PATH").is_err()
                 {
                     warnings.push("agent-brain — MCP routing & memory (install from GitHub releases or set BRAIN_PATH)");
@@ -202,7 +214,10 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             println!();
             println!("Next steps:");
             println!("  Validate your workflow:");
-            println!("    agent-spine validate {}/workflows/example.yaml", config_dir.display());
+            println!(
+                "    agent-spine validate {}/workflows/example.yaml",
+                config_dir.display()
+            );
             println!("  Start the dashboard server:");
             println!("    agent-spine serve --db state.db --port 3000");
             println!("  Check agent-brain connectivity:");
@@ -233,7 +248,11 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             );
             Ok(())
         }
-        Command::Run { workflow, payload, db } => {
+        Command::Run {
+            workflow,
+            payload,
+            db,
+        } => {
             let validated = WorkflowDefinition::from_path(workflow)?.validate()?;
             let initial_payload = serde_json::from_str(&payload)?;
 
@@ -243,12 +262,8 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             let supervisor = agent_spine::supervisor::Supervisor::new();
             let router = agent_spine::router::ConfidenceRouter::new(3);
 
-            let mut executor = agent_spine::executor::Executor::new(
-                validated,
-                store,
-                supervisor,
-                router,
-            );
+            let mut executor =
+                agent_spine::executor::Executor::new(validated, store, supervisor, router);
 
             let execution_id = executor.run(initial_payload).await?;
             println!("Workflow completed. Execution ID: {}", execution_id);
@@ -265,7 +280,10 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 for snapshot in history {
                     println!("Sequence: {}", snapshot.sequence());
-                    println!("Payload: {}", serde_json::to_string_pretty(snapshot.payload())?);
+                    println!(
+                        "Payload: {}",
+                        serde_json::to_string_pretty(snapshot.payload())?
+                    );
                     if let Some(trans) = snapshot.transition_edge() {
                         println!("Transition: {} -> {}", trans.from(), trans.to());
                     } else {
@@ -288,17 +306,26 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let mut current_snapshot = history[0].clone();
-            println!("Initial Payload: {}", serde_json::to_string_pretty(current_snapshot.payload())?);
+            println!(
+                "Initial Payload: {}",
+                serde_json::to_string_pretty(current_snapshot.payload())?
+            );
 
             for snapshot in history.into_iter().skip(1) {
                 if let Some(trans) = snapshot.transition_edge() {
                     println!("Replaying transition: {} -> {}", trans.from(), trans.to());
                 }
                 current_snapshot = snapshot;
-                println!("New Payload: {}", serde_json::to_string_pretty(current_snapshot.payload())?);
+                println!(
+                    "New Payload: {}",
+                    serde_json::to_string_pretty(current_snapshot.payload())?
+                );
             }
 
-            println!("Replay complete. Final sequence: {}", current_snapshot.sequence());
+            println!(
+                "Replay complete. Final sequence: {}",
+                current_snapshot.sequence()
+            );
             Ok(())
         }
         Command::Brain { action } => run_brain(action).await,

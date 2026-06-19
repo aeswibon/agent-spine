@@ -130,12 +130,7 @@ impl<S: WorkflowState> Executor<S> {
                 if matches!(node.kind(), NodeKind::Agent | NodeKind::Checkpoint)
                     && let Some(resp) = self
                         .brain
-                        .enrich_payload(
-                            node_name,
-                            "Agent",
-                            node.description(),
-                            &node_payload,
-                        )
+                        .enrich_payload(node_name, "Agent", node.description(), &node_payload)
                         .await
                     && let Some(obj) = node_payload.as_object_mut()
                     && let Ok(brain_value) = serde_json::to_value(&resp)
@@ -185,8 +180,7 @@ impl<S: WorkflowState> Executor<S> {
                                             return Err(ExecutorError::SupervisorFailed);
                                         }
                                         retries += 1;
-                                        let backoff_ms =
-                                            base_backoff * 2u64.pow(retries);
+                                        let backoff_ms = base_backoff * 2u64.pow(retries);
                                         tracing::warn!(
                                             "Node '{}' failed: {}. Retrying ({}/{}) in {}ms...",
                                             task.name,
@@ -195,9 +189,9 @@ impl<S: WorkflowState> Executor<S> {
                                             max_retries,
                                             backoff_ms
                                         );
-                                        tokio::time::sleep(
-                                            std::time::Duration::from_millis(backoff_ms),
-                                        )
+                                        tokio::time::sleep(std::time::Duration::from_millis(
+                                            backoff_ms,
+                                        ))
                                         .await;
                                     }
                                 }
@@ -257,8 +251,7 @@ impl<S: WorkflowState> Executor<S> {
             let mut escalate = false;
 
             for (node_name, payload) in &branch_results {
-                let outgoing: Vec<_> =
-                    edges.iter().filter(|e| e.from() == *node_name).collect();
+                let outgoing: Vec<_> = edges.iter().filter(|e| e.from() == *node_name).collect();
 
                 if outgoing.is_empty() {
                     continue;
@@ -274,10 +267,7 @@ impl<S: WorkflowState> Executor<S> {
                         .await
                     {
                         RouterAction::Escalate(target) => {
-                            tracing::warn!(
-                                "Brain Router: Escalating task for node '{}'.",
-                                target
-                            );
+                            tracing::warn!("Brain Router: Escalating task for node '{}'.", target);
                             escalate = true;
                         }
                         RouterAction::Continue => {}

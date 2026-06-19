@@ -199,20 +199,18 @@ impl McpBridge {
             .spawn()
             .map_err(|e| BridgeError::BinaryNotFound(format!("spawn failed: {e}")))?;
 
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| BridgeError::Io(std::io::Error::new(
+        let stdin = child.stdin.take().ok_or_else(|| {
+            BridgeError::Io(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "failed to capture child stdin",
-            )))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| BridgeError::Io(std::io::Error::new(
+            ))
+        })?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            BridgeError::Io(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "failed to capture child stdout",
-            )))?;
+            ))
+        })?;
 
         let mut bridge = Self {
             child,
@@ -344,10 +342,7 @@ impl McpBridge {
     pub async fn list_memory(&mut self, limit: usize) -> Result<Vec<MemoryFact>, BridgeError> {
         let args = serde_json::json!({ "limit": limit });
         let value = self.call_tool("list_memory", args).await?;
-        let facts = value
-            .get("facts")
-            .cloned()
-            .unwrap_or(Value::Null);
+        let facts = value.get("facts").cloned().unwrap_or(Value::Null);
         Ok(serde_json::from_value(facts)?)
     }
 
@@ -389,7 +384,9 @@ impl McpBridge {
             self.read_until_response(0),
         )
         .await
-        .map_err(|_| BridgeError::HandshakeFailed("timeout waiting for initialize response".into()))??;
+        .map_err(|_| {
+            BridgeError::HandshakeFailed("timeout waiting for initialize response".into())
+        })??;
 
         let protocol_version = resp
             .get("protocolVersion")
@@ -454,13 +451,12 @@ impl McpBridge {
 
         loop {
             line.clear();
-            let n = self
-                .stdout
-                .read_line(&mut line)
-                .await
-                .map_err(|e| BridgeError::Io(
-                    std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-                ))?;
+            let n = self.stdout.read_line(&mut line).await.map_err(|e| {
+                BridgeError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
 
             if n == 0 {
                 return Err(BridgeError::NotConnected);
@@ -509,10 +505,7 @@ impl McpBridge {
     /// Respond to an MCP server request (e.g. `ping`).
     async fn handle_server_request(&mut self, msg: Value) -> Result<(), BridgeError> {
         let id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-        let method = msg
-            .get("method")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
 
         let response = match method {
             "ping" => serde_json::json!({
@@ -649,7 +642,6 @@ pub fn node_route_message(
         summarize_payload(payload),
     )
 }
-
 
 #[cfg(test)]
 mod send_checks {

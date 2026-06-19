@@ -47,9 +47,7 @@ impl BrainRouter {
                     self.bridge = Some(bridge);
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "agent-brain not available, using fallback router: {e}"
-                    );
+                    tracing::warn!("agent-brain not available, using fallback router: {e}");
                 }
             }
         }
@@ -75,21 +73,20 @@ impl BrainRouter {
 
                     // Log brain's briefing for observability
                     if !resp.briefing.is_empty() {
-                        tracing::debug!(
-                            "brain route: {}",
-                            resp.briefing
-                        );
+                        tracing::debug!("brain route: {}", resp.briefing);
                     }
                     RouterAction::Continue
                 }
                 Err(e) => {
                     tracing::warn!("brain route_task failed: {e}, using fallback");
                     self.bridge = None; // force reconnect next time
-                    self.fallback.evaluate_transition(source_node, target_node, payload)
+                    self.fallback
+                        .evaluate_transition(source_node, target_node, payload)
                 }
             }
         } else {
-            self.fallback.evaluate_transition(source_node, target_node, payload)
+            self.fallback
+                .evaluate_transition(source_node, target_node, payload)
         }
     }
 
@@ -101,9 +98,9 @@ impl BrainRouter {
         bridge
             .route_task(
                 message,
-                None,       // cwd — resolved at connect time
-                &[],        // open_files
-                300,        // max_tokens — tight budget for routing
+                None, // cwd — resolved at connect time
+                &[],  // open_files
+                300,  // max_tokens — tight budget for routing
                 RouteLimits {
                     agents: 1,
                     skills: 2,
