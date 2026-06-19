@@ -101,3 +101,54 @@ fn missing_start_node_is_rejected() {
 
     assert_eq!(error.to_string(), "start_node references unknown node: foo");
 }
+
+#[test]
+fn conditional_edge_is_accepted() {
+    let workflow = WorkflowDefinition::new(
+        "conditional_edges",
+        1,
+        "router",
+        vec![
+            WorkflowNode::router("router"),
+            WorkflowNode::agent("frontend"),
+            WorkflowNode::agent("end"),
+        ],
+        vec![
+            WorkflowEdge::conditional("router", "frontend", r#"state.task_type == "frontend""#),
+            WorkflowEdge::new("frontend", "end"),
+        ],
+    );
+
+    let validated = workflow
+        .validate()
+        .expect("conditional edges must validate");
+    let edge = &validated.definition().edges()[0];
+    assert_eq!(edge.condition(), Some(r#"state.task_type == "frontend""#));
+}
+
+#[test]
+fn fork_join_workflow_is_accepted() {
+    let workflow = WorkflowDefinition::new(
+        "fork_join",
+        1,
+        "fork",
+        vec![
+            WorkflowNode::fork("fork"),
+            WorkflowNode::agent("a"),
+            WorkflowNode::agent("b"),
+            WorkflowNode::join("join"),
+            WorkflowNode::agent("end"),
+        ],
+        vec![
+            WorkflowEdge::new("fork", "a"),
+            WorkflowEdge::new("fork", "b"),
+            WorkflowEdge::new("a", "join"),
+            WorkflowEdge::new("b", "join"),
+            WorkflowEdge::new("join", "end"),
+        ],
+    );
+
+    workflow
+        .validate()
+        .expect("fork/join workflow must validate");
+}

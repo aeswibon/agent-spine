@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-19
+
+### Added
+- **Fork/Join Node Kinds**: `Fork` fans out to N parallel paths with explicit barrier at `Join` — true Map-Reduce semantics beyond edge topology
+- **Conditional Edges**: Edge `condition` field with expression parser — `state.task_type == "frontend"` evaluated at routing time; false = skipped
+- **Meta-Router**: `agent-spine run --meta "task description"` queries agent-brain to select the correct workflow YAML before execution
+- **Router Node Kind**: `NodeKind::Router` — delegates to LLM to inject state variables for dynamic branching
+- **Join Barrier Tracking**: Pre-computed incoming edge counts; Join only fires when all Fork branches complete
+- **Condition module**: Expression evaluator for `state.path.to.field <op> value` with `<`, `>`, `<=`, `>=`, `==`, `!=` support
+- **Integration tests**: Fork/Join barrier, multi-level branches, conditional edge skipping
+
+### Changed
+- Fork and Join nodes execute as pass-through (no agent delegation)
+- Router nodes use supervisor delegation (like Agent)
+- Phase 5 routing evaluates condition expressions and Join barriers
+
 ## [0.4.0] - 2026-06-19
 
 ### Added

@@ -6,8 +6,10 @@
 pub mod agent;
 pub mod api;
 pub mod brain_router;
+pub(crate) mod condition;
 pub mod executor;
 pub mod mcp_bridge;
+pub mod meta_router;
 pub mod router;
 pub mod state;
 pub mod supervisor;

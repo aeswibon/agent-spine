@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use regex::Regex;
@@ -5,6 +6,7 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::brain_router::BrainRouter;
+use crate::condition;
 use crate::router::RouterAction;
 use crate::state::StateError;
 use crate::supervisor::Supervisor;
@@ -248,6 +250,17 @@ impl<S: WorkflowState> Executor<S> {
         let edges = self.workflow.definition().edges().to_vec();
         let start_node = self.workflow.definition().start_node().to_owned();
 
+        // Pre-compute incoming edge counts for Join nodes (barrier tracking)
+        let mut join_incoming: HashMap<String, usize> = HashMap::new();
+        for edge in &edges {
+            if let Some(to_node) = nodes.iter().find(|n| n.name() == edge.to()) {
+                if matches!(to_node.kind(), NodeKind::Join) {
+                    *join_incoming.entry(edge.to().to_owned()).or_insert(0) += 1;
+                }
+            }
+        }
+        let mut join_completed: HashMap<String, usize> = HashMap::new();
+
         let mut current_node_names = vec![start_node];
 
         loop {
@@ -265,7 +278,10 @@ impl<S: WorkflowState> Executor<S> {
 
                 let mut node_payload = current_snapshot.payload().clone();
 
-                if matches!(node.kind(), NodeKind::Agent | NodeKind::Checkpoint) {
+                if matches!(
+                    node.kind(),
+                    NodeKind::Agent | NodeKind::Checkpoint | NodeKind::Router
+                ) {
                     let node_kind_str = node.kind().to_string();
                     self.enrich_from_brain(node_name, &node_kind_str, &mut node_payload);
                 }
@@ -291,7 +307,7 @@ impl<S: WorkflowState> Executor<S> {
                     let node_kind = task.kind.to_string();
                     let description = task.description.clone();
                     let next_payload = match task.kind {
-                        NodeKind::Agent | NodeKind::Checkpoint => {
+                        NodeKind::Agent | NodeKind::Checkpoint | NodeKind::Router => {
                             let mut retries = 0;
                             let max_retries = task.retry_policy.max_attempts;
                             let base_backoff = task.retry_policy.backoff_ms;
@@ -336,6 +352,7 @@ impl<S: WorkflowState> Executor<S> {
                                 }
                             }
                         }
+                        NodeKind::Fork | NodeKind::Join => task.payload,
                         NodeKind::Verify => task.payload,
                         NodeKind::ApprovalGate => {
                             let result = supervisor
@@ -394,7 +411,7 @@ impl<S: WorkflowState> Executor<S> {
                 merge_json(&mut final_payload, payload);
             }
 
-            // ── Phase 5: Determine next nodes (with optional brain routing) ──
+            // ── Phase 5: Determine next nodes (condition eval, brain routing, Join barriers) ──
             let mut next_node_names = Vec::new();
             let mut escalate = false;
 
@@ -408,12 +425,44 @@ impl<S: WorkflowState> Executor<S> {
                 for edge in outgoing {
                     let next_node_name = edge.to().to_owned();
 
+                    // Evaluate conditional edges — skip if condition is false
+                    if let Some(cond) = edge.condition() {
+                        if !condition::evaluate(cond, payload) {
+                            tracing::debug!(
+                                "Skipping edge '{}' -> '{}': condition '{cond}' is false",
+                                node_name,
+                                next_node_name,
+                            );
+                            continue;
+                        }
+                    }
+
                     match self.evaluate_brain_route(node_name, &next_node_name, payload) {
                         RouterAction::Escalate(target) => {
                             tracing::warn!("Brain Router: Escalating task for node '{}'.", target);
                             escalate = true;
                         }
                         RouterAction::Continue => {}
+                    }
+
+                    // Join barrier: only schedule Join when all incoming edges complete
+                    if let Some(expected) = join_incoming.get(&next_node_name) {
+                        let completed = join_completed.entry(next_node_name.clone()).or_insert(0);
+                        *completed += 1;
+                        if *completed < *expected {
+                            tracing::debug!(
+                                "Join '{}' waiting: {}/{} branches completed",
+                                next_node_name,
+                                completed,
+                                expected,
+                            );
+                            continue;
+                        }
+                        tracing::info!(
+                            "Join '{}' barrier satisfied: all {} branches complete",
+                            next_node_name,
+                            expected,
+                        );
                     }
 
                     next_node_names.push(next_node_name);

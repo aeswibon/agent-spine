@@ -246,3 +246,166 @@ async fn test_supervisor_timeout_and_retry() {
 
     exec_task.abort();
 }
+
+#[tokio::test]
+async fn test_fork_join_barrier() {
+    let nodes = vec![
+        WorkflowNode::fork("fork"),
+        WorkflowNode::agent("branch_a"),
+        WorkflowNode::agent("branch_b"),
+        WorkflowNode::join("join"),
+        WorkflowNode::agent("end"),
+    ];
+    let edges = vec![
+        WorkflowEdge::new("fork", "branch_a"),
+        WorkflowEdge::new("fork", "branch_b"),
+        WorkflowEdge::new("branch_a", "join"),
+        WorkflowEdge::new("branch_b", "join"),
+        WorkflowEdge::new("join", "end"),
+    ];
+
+    let def = WorkflowDefinition::new("test_fork_join", 1, "fork", nodes, edges);
+    let validated = def.validate().expect("valid workflow");
+
+    let store = Arc::new(Mutex::new(InMemoryStateStore::default()));
+    let supervisor = Supervisor::new();
+
+    let executor = Executor::new(validated, Arc::clone(&store), supervisor.clone());
+
+    let exec_task = tokio::spawn(async move {
+        let mut exec = executor;
+        exec.run(json!({ "init": true })).await
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // Fork (pass-through) → branch_a and branch_b run in parallel
+    let mut pending = supervisor.pending_tasks();
+    pending.sort();
+    assert_eq!(pending, vec!["branch_a", "branch_b"]);
+
+    supervisor
+        .resume("branch_a", json!({ "a_done": true }))
+        .unwrap();
+    supervisor
+        .resume("branch_b", json!({ "b_done": true }))
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // Both branches complete → Join fires → end runs
+    assert_eq!(supervisor.pending_tasks(), vec!["end"]);
+    supervisor.resume("end", json!({ "final": true })).unwrap();
+
+    let _ = exec_task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn test_conditional_edge_skips_branch() {
+    let nodes = vec![
+        WorkflowNode::router("router"),
+        WorkflowNode::agent("frontend"),
+        WorkflowNode::agent("backend"),
+        WorkflowNode::agent("end"),
+    ];
+    let edges = vec![
+        WorkflowEdge::conditional("router", "frontend", r#"state.task_type == "frontend""#),
+        WorkflowEdge::conditional("router", "backend", r#"state.task_type == "backend""#),
+        WorkflowEdge::new("frontend", "end"),
+        WorkflowEdge::new("backend", "end"),
+    ];
+
+    let def = WorkflowDefinition::new("test_conditional", 1, "router", nodes, edges);
+    let validated = def.validate().expect("valid workflow");
+
+    let store = Arc::new(Mutex::new(InMemoryStateStore::default()));
+    let supervisor = Supervisor::new();
+
+    let executor = Executor::new(validated, Arc::clone(&store), supervisor.clone());
+
+    let exec_task = tokio::spawn(async move {
+        let mut exec = executor;
+        exec.run(json!({ "state": { "task_type": "frontend" } }))
+            .await
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // Router executes and delegates to frontend branch
+    assert_eq!(supervisor.pending_tasks(), vec!["router"]);
+
+    supervisor
+        .resume("router", json!({ "state": { "task_type": "frontend" } }))
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // Only frontend branch runs (backend edge is conditional and was skipped)
+    assert_eq!(supervisor.pending_tasks(), vec!["frontend"]);
+    supervisor
+        .resume("frontend", json!({ "fe_done": true }))
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert_eq!(supervisor.pending_tasks(), vec!["end"]);
+    supervisor.resume("end", json!({ "final": true })).unwrap();
+
+    let _ = exec_task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn test_fork_join_with_multi_level_branches() {
+    let nodes = vec![
+        WorkflowNode::fork("fork"),
+        WorkflowNode::agent("long_branch_a"),
+        WorkflowNode::agent("long_branch_b"),
+        WorkflowNode::agent("long_branch_c"),
+        WorkflowNode::join("join"),
+        WorkflowNode::agent("end"),
+    ];
+    let edges = vec![
+        WorkflowEdge::new("fork", "long_branch_a"),
+        WorkflowEdge::new("fork", "long_branch_b"),
+        WorkflowEdge::new("long_branch_a", "long_branch_c"),
+        WorkflowEdge::new("long_branch_b", "join"),
+        WorkflowEdge::new("long_branch_c", "join"),
+        WorkflowEdge::new("join", "end"),
+    ];
+
+    let def = WorkflowDefinition::new("test_multi_level_fork_join", 1, "fork", nodes, edges);
+    let validated = def.validate().expect("valid workflow");
+
+    let store = Arc::new(Mutex::new(InMemoryStateStore::default()));
+    let supervisor = Supervisor::new();
+
+    let executor = Executor::new(validated, Arc::clone(&store), supervisor.clone());
+
+    let exec_task = tokio::spawn(async move {
+        let mut exec = executor;
+        exec.run(json!({ "init": true })).await
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // Fork passed through → both branches start
+    let mut pending = supervisor.pending_tasks();
+    pending.sort();
+    assert_eq!(pending, vec!["long_branch_a", "long_branch_b"]);
+
+    supervisor
+        .resume("long_branch_a", json!({ "a_done": true }))
+        .unwrap();
+    supervisor
+        .resume("long_branch_b", json!({ "b_done": true }))
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // Branch B reached Join (1 of 2), Branch A advances to branch C
+    assert_eq!(supervisor.pending_tasks(), vec!["long_branch_c"]);
+
+    supervisor
+        .resume("long_branch_c", json!({ "c_done": true }))
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // All branches complete → Join barrier satisfied → end runs
+    assert_eq!(supervisor.pending_tasks(), vec!["end"]);
+    supervisor.resume("end", json!({ "final": true })).unwrap();
+
+    let _ = exec_task.await.unwrap().unwrap();
+}

@@ -204,6 +204,24 @@ impl WorkflowNode {
         Self::new(name, NodeKind::ApprovalGate)
     }
 
+    /// Create a fork node — fans out into parallel branches.
+    #[must_use]
+    pub fn fork(name: impl Into<String>) -> Self {
+        Self::new(name, NodeKind::Fork)
+    }
+
+    /// Create a join node — barrier for parallel branch convergence.
+    #[must_use]
+    pub fn join(name: impl Into<String>) -> Self {
+        Self::new(name, NodeKind::Join)
+    }
+
+    /// Create a router node — injects state variables for dynamic branching.
+    #[must_use]
+    pub fn router(name: impl Into<String>) -> Self {
+        Self::new(name, NodeKind::Router)
+    }
+
     /// Create a node with the given kind.
     #[must_use]
     pub fn new(name: impl Into<String>, kind: NodeKind) -> Self {
@@ -255,6 +273,15 @@ pub enum NodeKind {
     Checkpoint,
     Verify,
     ApprovalGate,
+    /// Fan-out node — splits into N parallel branches, one per outgoing edge.
+    /// All branches converge at a downstream `Join` node.
+    Fork,
+    /// Barrier node — waits for all branches of the corresponding `Fork`
+    /// to complete before proceeding.
+    Join,
+    /// Injects state variables into the payload for dynamic branching.
+    /// The agent returns variables used in conditional edge expressions.
+    Router,
 }
 
 impl std::fmt::Display for NodeKind {
@@ -264,6 +291,9 @@ impl std::fmt::Display for NodeKind {
             Self::Checkpoint => write!(f, "checkpoint"),
             Self::Verify => write!(f, "verify"),
             Self::ApprovalGate => write!(f, "approval_gate"),
+            Self::Fork => write!(f, "fork"),
+            Self::Join => write!(f, "join"),
+            Self::Router => write!(f, "router"),
         }
     }
 }
@@ -273,6 +303,11 @@ impl std::fmt::Display for NodeKind {
 pub struct WorkflowEdge {
     from: String,
     to: String,
+    /// Optional condition expression evaluated against the current payload.
+    /// If the condition evaluates to `false`, the edge is skipped at routing time.
+    /// Format: `path.to.field <operator> <value>` e.g. `state.task_type == "frontend"`
+    #[serde(default)]
+    condition: Option<String>,
 }
 
 impl WorkflowEdge {
@@ -282,6 +317,21 @@ impl WorkflowEdge {
         Self {
             from: from.into(),
             to: to.into(),
+            condition: None,
+        }
+    }
+
+    /// Create a conditional edge.
+    #[must_use]
+    pub fn conditional(
+        from: impl Into<String>,
+        to: impl Into<String>,
+        condition: impl Into<String>,
+    ) -> Self {
+        Self {
+            from: from.into(),
+            to: to.into(),
+            condition: Some(condition.into()),
         }
     }
 
@@ -295,6 +345,12 @@ impl WorkflowEdge {
     #[must_use]
     pub fn to(&self) -> &str {
         &self.to
+    }
+
+    /// Return the optional condition expression.
+    #[must_use]
+    pub fn condition(&self) -> Option<&str> {
+        self.condition.as_deref()
     }
 }
 

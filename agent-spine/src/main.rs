@@ -50,6 +50,10 @@ enum Command {
         /// Enable agent-brain routing and enrichment.
         #[arg(short, long)]
         brain: bool,
+        /// Enable meta-router: query agent-brain to select the workflow YAML
+        /// based on this task prompt before execution.
+        #[arg(short, long)]
+        meta: Option<String>,
     },
     /// Inspect the history of a specific execution.
     Inspect {
@@ -337,8 +341,22 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             payload,
             db,
             brain,
+            meta,
         } => {
-            let validated = WorkflowDefinition::from_path(workflow)?.validate()?;
+            // Meta-router: select workflow YAML via agent-brain
+            let workflow_path = match meta {
+                Some(ref prompt) => {
+                    let workflows_dir = workflow.parent().unwrap_or(&workflow);
+                    let router =
+                        agent_spine::meta_router::MetaRouter::new(workflows_dir.to_path_buf());
+                    router
+                        .select_workflow(prompt)
+                        .unwrap_or_else(|| workflow.clone())
+                }
+                None => workflow.clone(),
+            };
+
+            let validated = WorkflowDefinition::from_path(workflow_path)?.validate()?;
             let initial_payload = serde_json::from_str(&payload)?;
 
             let store = agent_spine::state::SqliteStateStore::new(db)?;
@@ -574,13 +592,19 @@ start: plan
 
 nodes:
   - name: plan
-    kind: Agent
+    kind: Router
     retry:
       max_attempts: 2
       backoff_ms: 500
 
-  - name: lint
-    kind: Verify
+  - name: fork
+    kind: Fork
+
+  - name: implement
+    kind: Agent
+    retry:
+      max_attempts: 2
+      backoff_ms: 1000
 
   - name: test
     kind: Agent
@@ -588,26 +612,17 @@ nodes:
       max_attempts: 2
       backoff_ms: 1000
 
-  - name: build
-    kind: Agent
-    retry:
-      max_attempts: 3
-      backoff_ms: 500
+  - name: lint
+    kind: Verify
 
   - name: security-scan
     kind: Agent
 
+  - name: join
+    kind: Join
+
   - name: review-gate
     kind: ApprovalGate
-
-  - name: stage
-    kind: Agent
-
-  - name: integration-test
-    kind: Agent
-    retry:
-      max_attempts: 2
-      backoff_ms: 1000
 
   - name: deploy
     kind: Agent
@@ -617,22 +632,24 @@ nodes:
 
 edges:
   - from: plan
-    to: lint
-  - from: lint
+    to: fork
+  - from: fork
+    to: implement
+  - from: fork
     to: test
-  - from: lint
+  - from: implement
+    to: lint
+  - from: implement
     to: security-scan
-  - from: test
-    to: build
+  - from: lint
+    to: join
   - from: security-scan
-    to: review-gate
-  - from: build
+    to: join
+  - from: test
+    to: join
+  - from: join
     to: review-gate
   - from: review-gate
-    to: stage
-  - from: stage
-    to: integration-test
-  - from: integration-test
     to: deploy
   - from: deploy
     to: verify-deploy
