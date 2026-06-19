@@ -139,6 +139,7 @@ impl<S: WorkflowState> Executor<S> {
                     name: node_name.clone(),
                     kind: node.kind().clone(),
                     retry_policy: node.retry_policy(),
+                    description: node.description().map(String::from),
                     payload: node_payload,
                 });
             }
@@ -148,9 +149,12 @@ impl<S: WorkflowState> Executor<S> {
 
             for task in node_tasks {
                 let supervisor = self.supervisor.clone();
+                let workflow_name = self.workflow.definition().name().to_owned();
                 tracing::debug!("Spawning task for node '{}'", task.name);
 
                 join_set.spawn(async move {
+                    let node_kind = task.kind.to_string();
+                    let description = task.description.clone();
                     let next_payload = match task.kind {
                         NodeKind::Agent | NodeKind::Checkpoint => {
                             let mut retries = 0;
@@ -160,6 +164,9 @@ impl<S: WorkflowState> Executor<S> {
                                 match supervisor
                                     .delegate(
                                         task.name.clone(),
+                                        node_kind.clone(),
+                                        description.clone(),
+                                        workflow_name.clone(),
                                         task.payload.clone(),
                                         Some(std::time::Duration::from_secs(30)),
                                     )
@@ -197,7 +204,14 @@ impl<S: WorkflowState> Executor<S> {
                         NodeKind::Verify => task.payload,
                         NodeKind::ApprovalGate => {
                             let result = supervisor
-                                .delegate(task.name.clone(), task.payload, None)
+                                .delegate(
+                                    task.name.clone(),
+                                    node_kind.clone(),
+                                    description.clone(),
+                                    workflow_name.clone(),
+                                    task.payload,
+                                    None,
+                                )
                                 .await
                                 .map_err(|_| ExecutorError::SupervisorFailed)?;
 
@@ -307,6 +321,7 @@ struct NodeTask {
     name: String,
     kind: crate::workflow::NodeKind,
     retry_policy: crate::workflow::RetryPolicy,
+    description: Option<String>,
     payload: Value,
 }
 

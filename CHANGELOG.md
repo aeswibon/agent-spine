@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-19
+
+### Added
+- **CLI doctor**: `agent-spine doctor` diagnoses setup issues — checks rustc, protoc, bun, agent-brain, config dir, validates example workflow
+- **WorkflowEvent system**: Broadcast-channel event emission for node lifecycle (started, completed, failed, pending_approval, workflow_completed, workflow_failed)
+- **gRPC WatchEvents**: Server-streaming RPC on SupervisorService — IDE/UI subscribe to real-time events
+- **Enhanced PendingTask**: gRPC response includes `node_kind`, `description`, `workflow_name` for IDE briefing
+- **GetPendingTaskDetail**: gRPC RPC returning full metadata + payload for a pending task
+- **RetryPolicy validation**: YAML validates `max_attempts > 0` and `backoff_ms > 0` at parse time
+
+### Changed
+- **Supervisor::delegate()**: Now accepts `node_kind`, `description`, `workflow_name`; emits events on lifecycle transitions
+- **Proto schema**: Added `WatchEvents` RPC, `WorkflowEvent` message, `GetPendingTaskDetail` RPC, enhanced `PendingTask`
+- **NodeKind**: Added `Display` impl for string serialization in events and metadata
+
 ## [0.2.0] - 2026-06-19
 
 ### Added

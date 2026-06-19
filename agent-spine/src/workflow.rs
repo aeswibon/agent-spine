@@ -75,6 +75,21 @@ impl WorkflowDefinition {
                 return Err(WorkflowValidationError::EmptyNodeName { index });
             }
 
+            if let Some(ref rp) = node.retry_policy {
+                if rp.max_attempts == 0 {
+                    return Err(WorkflowValidationError::InvalidRetryPolicy {
+                        node: name.to_owned(),
+                        detail: "max_attempts must be greater than 0".to_owned(),
+                    });
+                }
+                if rp.backoff_ms == 0 {
+                    return Err(WorkflowValidationError::InvalidRetryPolicy {
+                        node: name.to_owned(),
+                        detail: "backoff_ms must be greater than 0".to_owned(),
+                    });
+                }
+            }
+
             if node_indexes.insert(name.to_owned(), index).is_some() {
                 return Err(WorkflowValidationError::DuplicateNodeName {
                     name: name.to_owned(),
@@ -242,6 +257,17 @@ pub enum NodeKind {
     ApprovalGate,
 }
 
+impl std::fmt::Display for NodeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Agent => write!(f, "agent"),
+            Self::Checkpoint => write!(f, "checkpoint"),
+            Self::Verify => write!(f, "verify"),
+            Self::ApprovalGate => write!(f, "approval_gate"),
+        }
+    }
+}
+
 /// A directed edge between two workflow nodes.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WorkflowEdge {
@@ -276,6 +302,8 @@ impl WorkflowEdge {
 pub enum WorkflowValidationError {
     #[error("workflow name must not be empty")]
     EmptyWorkflowName,
+    #[error("invalid retry policy for node '{node}': {detail}")]
+    InvalidRetryPolicy { node: String, detail: String },
     #[error("workflow version must be greater than zero")]
     InvalidVersion { version: u32 },
     #[error("workflow must declare at least one node")]

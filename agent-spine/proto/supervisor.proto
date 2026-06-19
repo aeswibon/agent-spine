@@ -6,17 +6,19 @@ package agent_spine;
 service SupervisorService {
     // Resume a pending execution by providing the resulting payload.
     rpc ResumeExecution (ResumeRequest) returns (ResumeResponse);
-    
-    // Poll or listen for pending tasks that require IDE intervention.
-    // In the future, this could be a streaming RPC.
-    // For now, simple unary is fine.
+
+    // Poll for pending tasks that require IDE intervention.
     rpc GetPendingTasks (GetPendingTasksRequest) returns (GetPendingTasksResponse);
+
+    // Get detailed metadata about a specific pending task.
+    rpc GetPendingTaskDetail (GetPendingTaskDetailRequest) returns (GetPendingTaskDetailResponse);
+
+    // Stream workflow events as they happen (server-sent events).
+    rpc WatchEvents (WatchEventsRequest) returns (stream WorkflowEvent);
 }
 
 message ResumeRequest {
-    // The node name that was pending.
     string node_name = 1;
-    // The resulting payload as a JSON string.
     string payload_json = 2;
 }
 
@@ -29,18 +31,43 @@ message GetPendingTasksRequest {}
 
 message PendingTask {
     string node_name = 1;
+    string node_kind = 2;
+    string description = 3;
+    string workflow_name = 4;
 }
 
 message GetPendingTasksResponse {
     repeated PendingTask tasks = 1;
 }
 
+message GetPendingTaskDetailRequest {
+    string node_name = 1;
+}
+
+message GetPendingTaskDetailResponse {
+    string node_name = 1;
+    string node_kind = 2;
+    string description = 3;
+    string workflow_name = 4;
+    string payload_json = 5;
+}
+
+message WatchEventsRequest {}
+
+message WorkflowEvent {
+    string event_type = 1;
+    string node_name = 2;
+    string node_kind = 3;
+    string description = 4;
+    string workflow_name = 5;
+    string execution_id = 6;
+    string error = 7;
+    string payload_json = 8;
+}
+
 // A service for the web dashboard to monitor and manage executions.
 service DashboardService {
-    // List all execution IDs.
     rpc ListExecutions (ListExecutionsRequest) returns (ListExecutionsResponse);
-    
-    // Get the full state snapshot history for a specific execution.
     rpc GetExecutionHistory (GetExecutionHistoryRequest) returns (GetExecutionHistoryResponse);
 }
 

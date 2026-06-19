@@ -1,18 +1,85 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
-use tokio::sync::oneshot;
+use tokio::sync::{broadcast, oneshot};
 
-struct PendingTask {
-    sender: oneshot::Sender<Value>,
-    payload: Value,
+/// Events emitted during workflow execution for IDE/UI consumption.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum WorkflowEvent {
+    /// A node has started executing.
+    NodeStarted {
+        node_name: String,
+        node_kind: String,
+        description: Option<String>,
+        workflow_name: String,
+    },
+    /// A node completed successfully.
+    NodeCompleted {
+        node_name: String,
+        node_kind: String,
+    },
+    /// A node failed.
+    NodeFailed {
+        node_name: String,
+        node_kind: String,
+        error: String,
+    },
+    /// A node is waiting for human intervention (ApprovalGate).
+    PendingApproval {
+        node_name: String,
+        description: Option<String>,
+        payload: Value,
+    },
+    /// The entire workflow finished.
+    WorkflowCompleted {
+        execution_id: String,
+        workflow_name: String,
+    },
+    /// The workflow failed.
+    WorkflowFailed {
+        execution_id: String,
+        workflow_name: String,
+        error: String,
+    },
+}
+
+/// Metadata tracked alongside each pending task for IDE briefing.
+#[derive(Debug)]
+pub struct PendingTaskMeta {
+    pub sender: oneshot::Sender<Value>,
+    pub payload: Value,
+    pub node_kind: String,
+    pub description: Option<String>,
+    pub workflow_name: String,
+}
+
+/// Read-only snapshot of pending task metadata (without the sender).
+#[derive(Clone, Debug)]
+pub struct PendingTaskInfo {
+    pub node_name: String,
+    pub node_kind: String,
+    pub description: Option<String>,
+    pub workflow_name: String,
+    pub payload: Value,
 }
 
 /// The Supervisor manages paused graph executions, delegating them to IDE agents.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Supervisor {
-    pending: Arc<Mutex<HashMap<String, PendingTask>>>,
+    pending: Arc<Mutex<HashMap<String, PendingTaskMeta>>>,
+    event_tx: broadcast::Sender<WorkflowEvent>,
+}
+
+impl Default for Supervisor {
+    fn default() -> Self {
+        let (event_tx, _) = broadcast::channel(256);
+        Self {
+            pending: Arc::new(Mutex::new(HashMap::new())),
+            event_tx,
+        }
+    }
 }
 
 impl Supervisor {
@@ -21,11 +88,25 @@ impl Supervisor {
         Self::default()
     }
 
+    /// Subscribe to workflow events.
+    #[must_use]
+    pub fn subscribe(&self) -> broadcast::Receiver<WorkflowEvent> {
+        self.event_tx.subscribe()
+    }
+
+    /// Emit an event (swallows send errors if no receivers).
+    fn emit(&self, event: WorkflowEvent) {
+        let _ = self.event_tx.send(event);
+    }
+
     /// Suspend execution and wait for the IDE agent to provide the next payload.
     #[tracing::instrument(skip(self, payload), fields(node = %node_name))]
     pub async fn delegate(
         &self,
         node_name: String,
+        node_kind: String,
+        description: Option<String>,
+        workflow_name: String,
         payload: Value,
         timeout: Option<std::time::Duration>,
     ) -> Result<Value, SupervisorError> {
@@ -38,27 +119,54 @@ impl Supervisor {
             }
             pending.insert(
                 node_name.clone(),
-                PendingTask {
+                PendingTaskMeta {
                     sender: tx,
-                    payload,
+                    payload: payload.clone(),
+                    node_kind: node_kind.clone(),
+                    description: description.clone(),
+                    workflow_name: workflow_name.clone(),
                 },
             );
             tracing::info!("Agent task suspended and waiting for delegation result");
+            self.emit(WorkflowEvent::NodeStarted {
+                node_name: node_name.clone(),
+                node_kind: node_kind.clone(),
+                description: description.clone(),
+                workflow_name: workflow_name.clone(),
+            });
         }
 
         if let Some(duration) = timeout {
             match tokio::time::timeout(duration, rx).await {
-                Ok(Ok(res)) => Ok(res),
+                Ok(Ok(res)) => {
+                    self.emit(WorkflowEvent::NodeCompleted {
+                        node_name: node_name.clone(),
+                        node_kind: node_kind.clone(),
+                    });
+                    Ok(res)
+                }
                 Ok(Err(_)) => {
                     tracing::warn!("Agent channel dropped");
-                    Err(SupervisorError::Dropped(node_name))
+                    let nn = node_name.clone();
+                    self.emit(WorkflowEvent::NodeFailed {
+                        node_name,
+                        node_kind,
+                        error: "channel dropped".to_owned(),
+                    });
+                    Err(SupervisorError::Dropped(nn))
                 }
                 Err(_) => {
                     tracing::warn!("Agent task timed out after {} seconds", duration.as_secs());
                     if let Ok(mut pending) = self.pending.lock() {
                         pending.remove(&node_name);
                     }
-                    Err(SupervisorError::Timeout(node_name))
+                    let nn = node_name.clone();
+                    self.emit(WorkflowEvent::NodeFailed {
+                        node_name,
+                        node_kind,
+                        error: "timeout".to_owned(),
+                    });
+                    Err(SupervisorError::Timeout(nn))
                 }
             }
         } else {
@@ -66,11 +174,28 @@ impl Supervisor {
                 "Waiting indefinitely for human intervention on '{}'",
                 node_name
             );
+            self.emit(WorkflowEvent::PendingApproval {
+                node_name: node_name.clone(),
+                description,
+                payload,
+            });
             match rx.await {
-                Ok(res) => Ok(res),
+                Ok(res) => {
+                    self.emit(WorkflowEvent::NodeCompleted {
+                        node_name: node_name.clone(),
+                        node_kind,
+                    });
+                    Ok(res)
+                }
                 Err(_) => {
                     tracing::warn!("Agent channel dropped");
-                    Err(SupervisorError::Dropped(node_name))
+                    let nn = node_name.clone();
+                    self.emit(WorkflowEvent::NodeFailed {
+                        node_name,
+                        node_kind,
+                        error: "channel dropped".to_owned(),
+                    });
+                    Err(SupervisorError::Dropped(nn))
                 }
             }
         }
@@ -115,6 +240,20 @@ impl Supervisor {
             .lock()
             .map(|guard| guard.keys().cloned().collect())
             .unwrap_or_default()
+    }
+
+    /// Get detailed metadata about a pending task (for IDE briefing).
+    #[must_use]
+    pub fn pending_task_info(&self, node_name: &str) -> Option<PendingTaskInfo> {
+        self.pending.lock().ok().and_then(|guard| {
+            guard.get(node_name).map(|meta| PendingTaskInfo {
+                node_name: node_name.to_owned(),
+                node_kind: meta.node_kind.clone(),
+                description: meta.description.clone(),
+                workflow_name: meta.workflow_name.clone(),
+                payload: meta.payload.clone(),
+            })
+        })
     }
 
     /// Get the stored payload for a pending task, if available.

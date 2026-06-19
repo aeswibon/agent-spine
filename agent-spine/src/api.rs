@@ -3,7 +3,10 @@ use std::sync::{Arc, Mutex};
 use tonic::{Request, Response, Status};
 
 use crate::WorkflowState;
-use crate::supervisor::Supervisor;
+use std::pin::Pin;
+use tokio_stream::{Stream, StreamExt};
+
+use crate::supervisor::{Supervisor, WorkflowEvent};
 
 pub mod pb {
     tonic::include_proto!("agent_spine");
@@ -12,9 +15,10 @@ pub mod pb {
 use pb::dashboard_service_server::DashboardService;
 use pb::supervisor_service_server::SupervisorService;
 use pb::{
-    GetExecutionHistoryRequest, GetExecutionHistoryResponse, GetPendingTasksRequest,
-    GetPendingTasksResponse, ListExecutionsRequest, ListExecutionsResponse, PendingTask,
-    ResumeRequest, ResumeResponse, StateSnapshot as PbStateSnapshot,
+    GetExecutionHistoryRequest, GetExecutionHistoryResponse, GetPendingTaskDetailRequest,
+    GetPendingTaskDetailResponse, GetPendingTasksRequest, GetPendingTasksResponse,
+    ListExecutionsRequest, ListExecutionsResponse, PendingTask, ResumeRequest, ResumeResponse,
+    StateSnapshot as PbStateSnapshot, WatchEventsRequest, WorkflowEvent as PbWorkflowEvent,
 };
 
 #[derive(Clone)]
@@ -82,12 +86,43 @@ impl SupervisorService for SupervisorApi {
         &self,
         _request: Request<GetPendingTasksRequest>,
     ) -> Result<Response<GetPendingTasksResponse>, Status> {
-        let pending = self.supervisor.pending_tasks();
-        let tasks = pending
+        let names = self.supervisor.pending_tasks();
+        let tasks = names
             .into_iter()
-            .map(|node_name| PendingTask { node_name })
+            .map(|node_name| {
+                let info = self.supervisor.pending_task_info(&node_name);
+                PendingTask {
+                    node_name,
+                    node_kind: info.as_ref().map_or(String::new(), |m| m.node_kind.clone()),
+                    description: info
+                        .as_ref()
+                        .map_or(String::new(), |m| m.description.clone().unwrap_or_default()),
+                    workflow_name: info
+                        .as_ref()
+                        .map_or(String::new(), |m| m.workflow_name.clone()),
+                }
+            })
             .collect();
         Ok(Response::new(GetPendingTasksResponse { tasks }))
+    }
+
+    async fn get_pending_task_detail(
+        &self,
+        request: Request<GetPendingTaskDetailRequest>,
+    ) -> Result<Response<GetPendingTaskDetailResponse>, Status> {
+        let req = request.into_inner();
+        let info = self
+            .supervisor
+            .pending_task_info(&req.node_name)
+            .ok_or_else(|| Status::not_found("no pending task for node"))?;
+
+        Ok(Response::new(GetPendingTaskDetailResponse {
+            node_name: info.node_name,
+            node_kind: info.node_kind,
+            description: info.description.unwrap_or_default(),
+            workflow_name: info.workflow_name,
+            payload_json: serde_json::to_string(&info.payload).unwrap_or_default(),
+        }))
     }
 
     async fn resume_execution(
@@ -107,6 +142,132 @@ impl SupervisorService for SupervisorApi {
                 success: false,
                 error_message: e.to_string(),
             })),
+        }
+    }
+
+    type WatchEventsStream = Pin<Box<dyn Stream<Item = Result<PbWorkflowEvent, Status>> + Send>>;
+
+    #[allow(clippy::result_large_err)]
+    async fn watch_events(
+        &self,
+        _request: Request<WatchEventsRequest>,
+    ) -> Result<Response<Self::WatchEventsStream>, Status> {
+        let rx = self.supervisor.subscribe();
+        let stream = tokio_stream::wrappers::BroadcastStream::new(rx);
+        let mapped = stream.map(|result| match result {
+            Ok(event) => Ok(PbWorkflowEvent::from(event)),
+            Err(_) => Err(tonic::Status::internal("event stream lagged behind")),
+        });
+        Ok(Response::new(Box::pin(mapped)))
+    }
+}
+
+impl From<WorkflowEvent> for PbWorkflowEvent {
+    fn from(event: WorkflowEvent) -> Self {
+        let (
+            event_type,
+            node_name,
+            node_kind,
+            description,
+            workflow_name,
+            execution_id,
+            error,
+            payload_json,
+        ) = match event {
+            WorkflowEvent::NodeStarted {
+                node_name,
+                node_kind,
+                description,
+                workflow_name,
+            } => (
+                "node_started".to_owned(),
+                node_name,
+                node_kind,
+                description,
+                workflow_name,
+                String::new(),
+                String::new(),
+                String::new(),
+            ),
+            WorkflowEvent::NodeCompleted {
+                node_name,
+                node_kind,
+            } => (
+                "node_completed".to_owned(),
+                node_name,
+                node_kind,
+                None,
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+            ),
+            WorkflowEvent::NodeFailed {
+                node_name,
+                node_kind,
+                error,
+            } => (
+                "node_failed".to_owned(),
+                node_name,
+                node_kind,
+                None,
+                String::new(),
+                String::new(),
+                error,
+                String::new(),
+            ),
+            WorkflowEvent::PendingApproval {
+                node_name,
+                description,
+                payload,
+            } => (
+                "pending_approval".to_owned(),
+                node_name,
+                String::new(),
+                description,
+                String::new(),
+                String::new(),
+                String::new(),
+                serde_json::to_string(&payload).unwrap_or_default(),
+            ),
+            WorkflowEvent::WorkflowCompleted {
+                execution_id,
+                workflow_name,
+            } => (
+                "workflow_completed".to_owned(),
+                String::new(),
+                String::new(),
+                None,
+                workflow_name,
+                execution_id,
+                String::new(),
+                String::new(),
+            ),
+            WorkflowEvent::WorkflowFailed {
+                execution_id,
+                workflow_name,
+                error,
+            } => (
+                "workflow_failed".to_owned(),
+                String::new(),
+                String::new(),
+                None,
+                workflow_name,
+                execution_id,
+                error,
+                String::new(),
+            ),
+        };
+
+        PbWorkflowEvent {
+            event_type,
+            node_name,
+            node_kind,
+            description: description.unwrap_or_default(),
+            workflow_name,
+            execution_id,
+            error,
+            payload_json,
         }
     }
 }

@@ -30,6 +30,8 @@ enum Command {
     },
     /// Display the capabilities planned for the current scaffold.
     Status,
+    /// Diagnose common setup issues.
+    Doctor,
     /// Parse and validate a YAML workflow definition.
     Validate {
         /// Path to a workflow definition file.
@@ -230,6 +232,85 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         Command::Status => {
             info!("agent-spine supervisor initialized");
             println!("agent-spine: skeleton ready; workflow validation is available");
+            Ok(())
+        }
+        Command::Doctor => {
+            use std::process::Command;
+
+            println!("agent-spine doctor — diagnostics");
+            println!();
+
+            let mut all_ok = true;
+
+            // Rust toolchain
+            if let Ok(output) = Command::new("rustc").arg("--version").output() {
+                let version = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+                println!("✓ rustc: {version}");
+            } else {
+                println!("✗ rustc: not found");
+                all_ok = false;
+            }
+
+            // protoc
+            if let Ok(output) = Command::new("protoc").arg("--version").output() {
+                let version = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+                println!("✓ protoc: {version}");
+            } else {
+                println!("⚠ protoc: not found (only needed for source builds)");
+            }
+
+            // bun
+            if let Ok(output) = Command::new("bun").arg("--version").output() {
+                let version = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+                println!("✓ bun: {version}");
+            } else {
+                println!("⚠ bun: not found (only needed for dashboard dev)");
+            }
+
+            // agent-brain
+            if let Ok(output) = Command::new("agent-brain").arg("--version").output() {
+                let version = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+                println!("✓ agent-brain: {version}");
+            } else {
+                println!("⚠ agent-brain: not found (optional — MCP routing & memory)");
+            }
+
+            // Binary version
+            println!();
+            println!("agent-spine v{}", env!("CARGO_PKG_VERSION"));
+
+            // Config directory
+            let home = std::env::var("HOME").unwrap_or_default();
+            let config_dir = std::path::PathBuf::from(&home).join(".config/agent-spine");
+            if config_dir.exists() {
+                println!("✓ config dir: {}", config_dir.display());
+            } else {
+                println!(
+                    "  config dir: {} (not yet created — run `agent-spine init`)",
+                    config_dir.display()
+                );
+            }
+
+            // Example workflow validation
+            let example = config_dir.join("workflows/example.yaml");
+            if example.exists() {
+                match WorkflowDefinition::from_path(&example) {
+                    Ok(def) => match def.validate() {
+                        Ok(_) => println!("✓ example workflow: valid"),
+                        Err(e) => println!("⚠ example workflow: {e}"),
+                    },
+                    Err(_) => println!("⚠ example workflow: could not parse"),
+                }
+            }
+
+            if all_ok {
+                println!();
+                println!("All checks passed.");
+            } else {
+                println!();
+                println!("Some checks failed. Run `agent-spine init` for setup help.");
+            }
+
             Ok(())
         }
         Command::Validate { workflow } => {
