@@ -19,6 +19,15 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Initialize agent-spine: config, example workflow, and prerequisites check.
+    Init {
+        /// Skip prerequisite checks (protoc, bun, agent-brain).
+        #[arg(short, long)]
+        force: bool,
+        /// Target directory for generated files (default: ~/.config/agent-spine).
+        #[arg(short, long)]
+        dir: Option<PathBuf>,
+    },
     /// Display the capabilities planned for the current scaffold.
     Status,
     /// Parse and validate a YAML workflow definition.
@@ -123,6 +132,86 @@ async fn main() {
 
 async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
     match command {
+        Command::Init { force, dir } => {
+            use std::io::Write;
+
+            let config_dir = dir.unwrap_or_else(|| {
+                let home = std::env::var("HOME").expect("HOME must be set");
+                PathBuf::from(home).join(".config/agent-spine")
+            });
+
+            println!("agent-spine v{} init", env!("CARGO_PKG_VERSION"));
+            println!("  config:  {}", config_dir.display());
+            println!();
+
+            // Prerequisites
+            if !force {
+                let mut warnings = Vec::new();
+                if std::process::Command::new("protoc").arg("--version").output().is_err() {
+                    warnings.push("protoc — gRPC codegen (https://grpc.io/docs/protoc-installation/)");
+                }
+                if std::process::Command::new("bun").arg("--version").output().is_err() {
+                    warnings.push("bun — dashboard dev server (https://bun.sh)");
+                }
+                if std::process::Command::new("agent-brain").arg("--version").output().is_err()
+                    && std::env::var("BRAIN_PATH").is_err()
+                {
+                    warnings.push("agent-brain — MCP routing & memory (install from GitHub releases or set BRAIN_PATH)");
+                }
+                if !warnings.is_empty() {
+                    println!("Optional dependencies not found:");
+                    for w in &warnings {
+                        println!("  ⚠  {w}");
+                    }
+                    println!();
+                } else {
+                    println!("✓ All prerequisites satisfied");
+                    println!();
+                }
+            }
+
+            // Create config directory
+            std::fs::create_dir_all(&config_dir)
+                .map_err(|e| format!("failed to create config dir: {e}"))?;
+            let workflows_dir = config_dir.join("workflows");
+            std::fs::create_dir_all(&workflows_dir)
+                .map_err(|e| format!("failed to create workflows dir: {e}"))?;
+
+            // Write default config
+            let config_path = config_dir.join("config.toml");
+            if !config_path.exists() {
+                let mut f = std::fs::File::create(&config_path)
+                    .map_err(|e| format!("failed to write config: {e}"))?;
+                write!(f, "{}", CONFIG_TEMPLATE)?;
+                println!("✓ Created config: {}", config_path.display());
+            } else {
+                println!("  Config exists: {}", config_path.display());
+            }
+
+            // Write example workflow
+            let example_path = workflows_dir.join("example.yaml");
+            if !example_path.exists() {
+                let mut f = std::fs::File::create(&example_path)
+                    .map_err(|e| format!("failed to write example workflow: {e}"))?;
+                write!(f, "{}", EXAMPLE_WORKFLOW)?;
+                println!("✓ Created example: {}", example_path.display());
+            } else {
+                println!("  Example exists: {}", example_path.display());
+            }
+
+            println!();
+            println!("Next steps:");
+            println!("  Validate your workflow:");
+            println!("    agent-spine validate {}/workflows/example.yaml", config_dir.display());
+            println!("  Start the dashboard server:");
+            println!("    agent-spine serve --db state.db --port 3000");
+            println!("  Check agent-brain connectivity:");
+            println!("    agent-spine brain health");
+            println!("  See all commands:");
+            println!("    agent-spine --help");
+
+            Ok(())
+        }
         Command::Status => {
             info!("agent-spine supervisor initialized");
             println!("agent-spine: skeleton ready; workflow validation is available");
@@ -347,3 +436,52 @@ async fn run_brain(command: BrainCommand) -> Result<(), Box<dyn std::error::Erro
         }
     }
 }
+
+const CONFIG_TEMPLATE: &str = r##"# agent-spine configuration
+# See https://github.com/aeswibon/agent-spine for documentation.
+
+[server]
+port = 3000
+db = "state.db"
+
+[brain]
+# Path to agent-brain binary (optional — resolves from PATH or BRAIN_PATH)
+# path = "/usr/local/bin/agent-brain"
+
+[routing]
+max_failures = 3
+"##;
+
+const EXAMPLE_WORKFLOW: &str = r##"name: example-pipeline
+version: 1
+start: fetch-data
+
+nodes:
+  - name: fetch-data
+    kind: Agent
+    retry:
+      max_attempts: 3
+      backoff_ms: 200
+
+  - name: validate
+    kind: Verify
+
+  - name: approve
+    kind: ApprovalGate
+
+  - name: process
+    kind: Agent
+
+  - name: report
+    kind: Agent
+
+edges:
+  - from: fetch-data
+    to: validate
+  - from: validate
+    to: approve
+  - from: approve
+    to: process
+  - from: process
+    to: report
+"##;

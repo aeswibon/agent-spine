@@ -144,36 +144,35 @@ flowchart TB
 
 ## Getting started
 
+### Binary install (recommended)
+
+Download the pre-built binary from [GitHub Releases](https://github.com/aeswibon/agent-spine/releases).
+
+```bash
+# macOS / Linux
+curl -L https://github.com/aeswibon/agent-spine/releases/download/v0.1.0/agent-spine-{target}.tar.gz | tar xz
+sudo mv agent-spine /usr/local/bin/
+
+# One-time setup — creates config, example workflow, checks prerequisites
+agent-spine init
+
+# Start the dashboard server
+agent-spine serve --db state.db --port 3000
+```
+
+### Build from source
+
+```bash
+git clone https://github.com/aeswibon/agent-spine.git && cd agent-spine
+cargo build --release
+./target/release/agent-spine init
+```
+
 ### Prerequisites
 
-- Rust stable with Cargo
-- [protobuf compiler](https://grpc.io/docs/protoc-installation/) (for gRPC code generation)
-- [Bun](https://bun.sh/) (for dashboard development)
-
-### Build and test
-
-```bash
-git clone https://github.com/aeswibon/agent-spine.git
-cd agent-spine
-cargo test --workspace --all-features
-cargo run -p agent-spine -- validate path/to/workflow.yaml
-```
-
-### Run the dashboard server
-
-```bash
-cargo run -p agent-spine -- serve --db state.db --port 3000
-```
-
-### Dashboard development
-
-```bash
-cd dashboard
-bun install
-bun run dev      # dev server (expects gRPC backend on :3000)
-bun run check    # type check
-bun run build    # production build
-```
+- **protoc** — gRPC codegen (https://grpc.io/docs/protoc-installation/) — only needed when building from source
+- **bun** — dashboard dev (https://bun.sh) — optional
+- **agent-brain** — MCP routing & memory (set `BRAIN_PATH` or [install from releases](https://github.com/aeswibon/agent-brain/releases)) — optional
 
 ## Using v0.1
 
