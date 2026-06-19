@@ -14,6 +14,7 @@ pub mod router;
 pub mod state;
 pub mod supervisor;
 pub mod workflow;
+pub mod workflow_manager;
 
 mod execution;
 mod snapshot;
@@ -28,6 +29,7 @@ pub use workflow::{
     NodeKind, ValidatedWorkflow, WorkflowDefinition, WorkflowEdge, WorkflowNode,
     WorkflowValidationError,
 };
+pub use workflow_manager::WorkflowManager;
 
 /// Read and append immutable workflow snapshots.
 pub trait WorkflowState: Send {

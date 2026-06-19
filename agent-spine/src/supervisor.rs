@@ -95,7 +95,7 @@ impl Supervisor {
     }
 
     /// Emit an event (swallows send errors if no receivers).
-    fn emit(&self, event: WorkflowEvent) {
+    pub(crate) fn emit(&self, event: WorkflowEvent) {
         let _ = self.event_tx.send(event);
     }
 

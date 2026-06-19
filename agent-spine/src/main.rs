@@ -439,12 +439,17 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         Command::Serve { db, port } => {
             info!("Starting agent-spine gRPC server on port {}", port);
 
+            let wf_manager = agent_spine::WorkflowManager::new(db.clone(), false);
+
             let store = agent_spine::state::SqliteStateStore::new(db)?;
             let store = std::sync::Arc::new(std::sync::Mutex::new(store));
 
             let supervisor = agent_spine::supervisor::Supervisor::new();
 
-            let dashboard_api = agent_spine::api::DashboardApi { store };
+            let dashboard_api = agent_spine::api::DashboardApi {
+                store,
+                workflow_manager: wf_manager,
+            };
             let supervisor_api = agent_spine::api::SupervisorApi { supervisor };
 
             let dashboard_svc =

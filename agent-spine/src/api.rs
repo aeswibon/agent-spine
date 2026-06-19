@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use tonic::{Request, Response, Status};
 
 use crate::WorkflowState;
+use crate::workflow_manager::WorkflowManager;
 use std::pin::Pin;
 use tokio_stream::{Stream, StreamExt};
 
@@ -15,15 +16,19 @@ pub mod pb {
 use pb::dashboard_service_server::DashboardService;
 use pb::supervisor_service_server::SupervisorService;
 use pb::{
-    GetExecutionHistoryRequest, GetExecutionHistoryResponse, GetPendingTaskDetailRequest,
-    GetPendingTaskDetailResponse, GetPendingTasksRequest, GetPendingTasksResponse,
-    ListExecutionsRequest, ListExecutionsResponse, PendingTask, ResumeRequest, ResumeResponse,
-    StateSnapshot as PbStateSnapshot, WatchEventsRequest, WorkflowEvent as PbWorkflowEvent,
+    GetExecutionHistoryRequest, GetExecutionHistoryResponse, GetExecutionStatusRequest,
+    GetExecutionStatusResponse, GetPendingTaskDetailRequest, GetPendingTaskDetailResponse,
+    GetPendingTasksRequest, GetPendingTasksResponse, ListExecutionsRequest, ListExecutionsResponse,
+    ListRunningExecutionsRequest, ListRunningExecutionsResponse, PendingTask, ResumeRequest,
+    ResumeResponse, StateSnapshot as PbStateSnapshot, SubmitWorkflowRequest,
+    SubmitWorkflowResponse, WatchEventsRequest, WorkflowEvent as PbWorkflowEvent,
+    WorkflowExecutionStatus,
 };
 
 #[derive(Clone)]
 pub struct DashboardApi {
     pub store: Arc<Mutex<dyn WorkflowState>>,
+    pub workflow_manager: WorkflowManager,
 }
 
 #[tonic::async_trait]
@@ -72,6 +77,68 @@ impl DashboardService for DashboardApi {
         Ok(Response::new(GetExecutionHistoryResponse {
             history: pb_history,
         }))
+    }
+
+    async fn submit_workflow(
+        &self,
+        request: Request<SubmitWorkflowRequest>,
+    ) -> Result<Response<SubmitWorkflowResponse>, Status> {
+        let req = request.into_inner();
+        let payload: Value = serde_json::from_str(&req.payload_json)
+            .map_err(|e| Status::invalid_argument(format!("Invalid JSON payload: {e}")))?;
+
+        match self
+            .workflow_manager
+            .submit_yaml(&req.workflow_yaml, payload)
+        {
+            Ok(execution_id) => Ok(Response::new(SubmitWorkflowResponse {
+                execution_id,
+                error_message: String::new(),
+            })),
+            Err(e) => Ok(Response::new(SubmitWorkflowResponse {
+                execution_id: String::new(),
+                error_message: e,
+            })),
+        }
+    }
+
+    async fn get_execution_status(
+        &self,
+        request: Request<GetExecutionStatusRequest>,
+    ) -> Result<Response<GetExecutionStatusResponse>, Status> {
+        let req = request.into_inner();
+        match self.workflow_manager.execution_status(&req.execution_id) {
+            Some(run) => Ok(Response::new(GetExecutionStatusResponse {
+                execution: Some(WorkflowExecutionStatus {
+                    execution_id: run.execution_id,
+                    workflow_name: run.workflow_name,
+                    status: run.status,
+                    current_nodes: run.current_nodes,
+                    node_count: 0,
+                }),
+            })),
+            None => Err(Status::not_found("Execution not found")),
+        }
+    }
+
+    async fn list_running_executions(
+        &self,
+        _request: Request<ListRunningExecutionsRequest>,
+    ) -> Result<Response<ListRunningExecutionsResponse>, Status> {
+        let executions = self
+            .workflow_manager
+            .list_executions()
+            .into_iter()
+            .map(|run| WorkflowExecutionStatus {
+                execution_id: run.execution_id,
+                workflow_name: run.workflow_name,
+                status: run.status,
+                current_nodes: run.current_nodes,
+                node_count: 0,
+            })
+            .collect();
+
+        Ok(Response::new(ListRunningExecutionsResponse { executions }))
     }
 }
 

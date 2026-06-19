@@ -69,6 +69,9 @@ message WorkflowEvent {
 service DashboardService {
     rpc ListExecutions (ListExecutionsRequest) returns (ListExecutionsResponse);
     rpc GetExecutionHistory (GetExecutionHistoryRequest) returns (GetExecutionHistoryResponse);
+    rpc SubmitWorkflow (SubmitWorkflowRequest) returns (SubmitWorkflowResponse);
+    rpc GetExecutionStatus (GetExecutionStatusRequest) returns (GetExecutionStatusResponse);
+    rpc ListRunningExecutions (ListRunningExecutionsRequest) returns (ListRunningExecutionsResponse);
 }
 
 message ListExecutionsRequest {}
@@ -89,4 +92,36 @@ message StateSnapshot {
 
 message GetExecutionHistoryResponse {
     repeated StateSnapshot history = 1;
+}
+
+message SubmitWorkflowRequest {
+    string workflow_yaml = 1;
+    string payload_json = 2;
+}
+
+message SubmitWorkflowResponse {
+    string execution_id = 1;
+    string error_message = 2;
+}
+
+message WorkflowExecutionStatus {
+    string execution_id = 1;
+    string workflow_name = 2;
+    string status = 3;
+    repeated string current_nodes = 4;
+    int32 node_count = 5;
+}
+
+message GetExecutionStatusRequest {
+    string execution_id = 1;
+}
+
+message GetExecutionStatusResponse {
+    WorkflowExecutionStatus execution = 1;
+}
+
+message ListRunningExecutionsRequest {}
+
+message ListRunningExecutionsResponse {
+    repeated WorkflowExecutionStatus executions = 1;
 }
