@@ -17,6 +17,7 @@ pub mod state;
 pub mod supervisor;
 pub mod workflow;
 pub mod workflow_manager;
+pub mod workflows;
 
 mod execution;
 mod snapshot;

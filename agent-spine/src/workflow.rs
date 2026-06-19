@@ -13,6 +13,10 @@ pub struct WorkflowDefinition {
     name: String,
     version: u32,
     start_node: String,
+    /// Minimum agent-spine version required to run this workflow (e.g. "0.8.0").
+    /// If set, the binary checks at parse/validate time and warns on mismatch.
+    #[serde(default)]
+    min_spine_version: Option<String>,
     #[serde(default)]
     nodes: Vec<WorkflowNode>,
     #[serde(default)]
@@ -33,9 +37,23 @@ impl WorkflowDefinition {
             name: name.into(),
             version,
             start_node: start_node.into(),
+            min_spine_version: None,
             nodes,
             edges,
         }
+    }
+
+    /// Set the minimum required agent-spine version.
+    #[must_use]
+    pub fn with_min_spine_version(mut self, version: impl Into<String>) -> Self {
+        self.min_spine_version = Some(version.into());
+        self
+    }
+
+    /// Return the minimum required agent-spine version, if set.
+    #[must_use]
+    pub fn min_spine_version(&self) -> Option<&str> {
+        self.min_spine_version.as_deref()
     }
 
     /// Load and parse a workflow definition from a YAML file.
@@ -62,6 +80,10 @@ impl WorkflowDefinition {
 
         if self.version == 0 {
             return Err(WorkflowValidationError::InvalidVersion { version: 0 });
+        }
+
+        if let Some(ref min_ver) = self.min_spine_version {
+            check_spine_version(min_ver)?;
         }
 
         if self.nodes.is_empty() {
@@ -372,6 +394,8 @@ pub enum WorkflowValidationError {
     MissingStartNode { name: String },
     #[error("workflow edge references unknown node: {name}")]
     UnknownNode { name: String },
+    #[error("workflow requires agent-spine >= {required}, but running {current}")]
+    SpineVersionTooOld { required: String, current: String },
     #[error("failed to read workflow definition from {path}: {source}")]
     Read {
         path: PathBuf,
@@ -383,4 +407,29 @@ pub enum WorkflowValidationError {
         #[source]
         source: serde_yaml::Error,
     },
+}
+
+/// Compare the running agent-spine version against a required minimum.
+///
+/// Version strings are split on `.` and compared component-wise.
+/// Returns `Ok(())` if the running version is >= required.
+fn check_spine_version(required: &str) -> Result<(), WorkflowValidationError> {
+    let current = env!("CARGO_PKG_VERSION");
+    let req_parts: Vec<u32> = required.split('.').filter_map(|p| p.parse().ok()).collect();
+    let cur_parts: Vec<u32> = current.split('.').filter_map(|p| p.parse().ok()).collect();
+
+    for i in 0..req_parts.len().max(cur_parts.len()) {
+        let req = req_parts.get(i).copied().unwrap_or(0);
+        let cur = cur_parts.get(i).copied().unwrap_or(0);
+        if cur > req {
+            return Ok(());
+        }
+        if cur < req {
+            return Err(WorkflowValidationError::SpineVersionTooOld {
+                required: required.to_owned(),
+                current: current.to_owned(),
+            });
+        }
+    }
+    Ok(())
 }

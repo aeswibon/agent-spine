@@ -1,0 +1,54 @@
+name: Database Migration
+version: 1
+min_spine_version: "0.8.0"
+start_node: AnalyzeSchema
+
+nodes:
+  - name: AnalyzeSchema
+    kind: agent
+    description: "Reads current schema, ORM models, and existing migrations to understand the change needed."
+    retry_policy:
+      max_attempts: 3
+      backoff_ms: 500
+
+  - name: WriteSQL
+    kind: agent
+    description: "Generates the migration SQL (up and down) plus the ORM model changes."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 1000
+
+  - name: SandboxDB
+    kind: checkpoint
+    description: "Applies migration to a sandbox database and runs validation queries."
+
+  - name: Apply
+    kind: agent
+    description: "Applies the migration to the target environment."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 1000
+
+  - name: RollbackTest
+    kind: checkpoint
+    description: "Verifies the down migration works cleanly and data integrity is preserved."
+
+  - name: ReviewGate
+    kind: approval_gate
+    description: "Human reviews the migration SQL, sandbox results, and rollback test."
+
+edges:
+  - from: AnalyzeSchema
+    to: WriteSQL
+  - from: WriteSQL
+    to: SandboxDB
+  - from: SandboxDB
+    to: Apply
+    condition: state.sandbox_passed == true
+  - from: SandboxDB
+    to: WriteSQL
+    condition: state.sandbox_passed == false
+  - from: Apply
+    to: RollbackTest
+  - from: RollbackTest
+    to: ReviewGate

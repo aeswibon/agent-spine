@@ -1,0 +1,81 @@
+name: Root Cause Analysis
+version: 1
+min_spine_version: "0.8.0"
+start_node: HydrateLogs
+
+nodes:
+  - name: HydrateLogs
+    kind: agent
+    description: "Collects logs, error traces, metrics, and incident reports related to the failure."
+    retry_policy:
+      max_attempts: 3
+      backoff_ms: 500
+
+  - name: Hypothesis1
+    kind: agent
+    description: "Investigates hypothesis A — potential root cause and supporting evidence."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 1000
+
+  - name: Hypothesis2
+    kind: agent
+    description: "Investigates hypothesis B — potential root cause and supporting evidence."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 1000
+
+  - name: Hypothesis3
+    kind: agent
+    description: "Investigates hypothesis C — potential root cause and supporting evidence."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 1000
+
+  - name: SandboxReproduction
+    kind: checkpoint
+    description: "Attempts to reproduce the failure in a sandbox environment with the proposed root cause."
+
+  - name: IdentifyRootCause
+    kind: agent
+    description: "Analyzes reproduction results and identifies the definitive root cause."
+    retry_policy:
+      max_attempts: 3
+      backoff_ms: 500
+
+  - name: PostMortem
+    kind: agent
+    description: "Writes a post-mortem report with timeline, root cause, impact, and action items."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 500
+
+edges:
+  - from: HydrateLogs
+    to: Hypothesis1
+  - from: HydrateLogs
+    to: Hypothesis2
+  - from: HydrateLogs
+    to: Hypothesis3
+  - from: Hypothesis1
+    to: SandboxReproduction
+    condition: state.evidence_score >= 0.5
+  - from: Hypothesis2
+    to: SandboxReproduction
+    condition: state.evidence_score >= 0.5
+  - from: Hypothesis3
+    to: SandboxReproduction
+    condition: state.evidence_score >= 0.5
+  - from: Hypothesis1
+    to: IdentifyRootCause
+    condition: state.evidence_score < 0.5
+  - from: Hypothesis2
+    to: IdentifyRootCause
+    condition: state.evidence_score < 0.5
+  - from: Hypothesis3
+    to: IdentifyRootCause
+    condition: state.evidence_score < 0.5
+  - from: SandboxReproduction
+    to: IdentifyRootCause
+  - from: IdentifyRootCause
+    to: PostMortem

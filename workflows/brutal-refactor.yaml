@@ -1,0 +1,63 @@
+name: Brutal Refactor
+version: 1
+min_spine_version: "0.8.0"
+start_node: ASTSearch
+
+nodes:
+  - name: ASTSearch
+    kind: agent
+    description: "Searches the codebase via AST to find all callers, imports, and usages of the target API."
+    retry_policy:
+      max_attempts: 3
+      backoff_ms: 500
+
+  - name: DraftInterface
+    kind: agent
+    description: "Designs the new interface/API, writes the new implementation, and updates the type definitions."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 1000
+
+  - name: UpdateCallers
+    kind: agent
+    description: "Migrates every caller to the new interface, handling edge cases and deprecation paths."
+    retry_policy:
+      max_attempts: 3
+      backoff_ms: 1000
+
+  - name: Typecheck
+    kind: checkpoint
+    description: "Runs the type checker / compiler to verify everything compiles cleanly."
+
+  - name: TypecheckLoop
+    kind: agent
+    description: "Fixes type errors found by the compiler, iterates until clean."
+    retry_policy:
+      max_attempts: 5
+      backoff_ms: 500
+
+  - name: TestSuite
+    kind: checkpoint
+    description: "Runs the full test suite to verify correctness."
+
+  - name: ReviewGate
+    kind: approval_gate
+    description: "Human reviews the refactored code, diff size, and test results."
+
+edges:
+  - from: ASTSearch
+    to: DraftInterface
+  - from: DraftInterface
+    to: UpdateCallers
+  - from: UpdateCallers
+    to: Typecheck
+  - from: Typecheck
+    to: TypecheckLoop
+    condition: state.typecheck_passed == false
+  - from: Typecheck
+    to: TestSuite
+    condition: state.typecheck_passed == true
+  - from: TypecheckLoop
+    to: Typecheck
+  - from: TestSuite
+    to: ReviewGate

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-19
+
+### Added
+- **7 Built-in Workflows**: Production-ready YAML pipelines in `workflows/` — universal-developer, database-migration, security-patcher, deep-code-review, brutal-refactor, system-architect, root-cause-analysis
+- **`init --with <workflow>`**: Generate a specific built-in workflow instead of the generic example; `init --with list` shows available workflows
+- **Workflow Version Pinning**: Optional `min_spine_version` field in YAML frontmatter — validates against running binary version at parse time
+- **Embedded Workflow Library**: New `workflows` module compiled into binary via `include_str!` — always available without disk files
+
+### Changed
+- `WorkflowDefinition` gains `min_spine_version` field (optional, e.g. `"0.8.0"`) with comparator in `validate()`
+- `init` command now takes `--with <name>` flag; writes named workflow instead of generic example
+
 ## [0.7.0] - 2026-06-19
 
 ### Added

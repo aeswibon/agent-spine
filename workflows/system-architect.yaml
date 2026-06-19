@@ -1,0 +1,90 @@
+name: System Architect
+version: 1
+min_spine_version: "0.8.0"
+start_node: GatherContext
+
+nodes:
+  - name: GatherContext
+    kind: agent
+    description: "Collects requirements, existing architecture docs, constraints, and tech stack details."
+    retry_policy:
+      max_attempts: 3
+      backoff_ms: 500
+
+  - name: Ideate
+    kind: agent
+    description: "Brainstorms 3 distinct architectural approaches with trade-off analysis."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 1000
+
+  - name: Fork
+    kind: fork
+    description: "Evaluates all three approaches in parallel."
+
+  - name: EvaluateA
+    kind: agent
+    description: "Deep evaluation of Approach A — scalability, maintainability, cost, risk."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 500
+
+  - name: EvaluateB
+    kind: agent
+    description: "Deep evaluation of Approach B — scalability, maintainability, cost, risk."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 500
+
+  - name: EvaluateC
+    kind: agent
+    description: "Deep evaluation of Approach C — scalability, maintainability, cost, risk."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 500
+
+  - name: Join
+    kind: join
+    description: "Collects all three evaluations."
+
+  - name: Recommend
+    kind: agent
+    description: "Compares evaluations and recommends the best approach with rationale."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 500
+
+  - name: ADR
+    kind: agent
+    description: "Writes an Architecture Decision Record documenting the chosen approach."
+    retry_policy:
+      max_attempts: 3
+      backoff_ms: 500
+
+  - name: ReviewGate
+    kind: approval_gate
+    description: "Human reviews the ADR and recommendation before proceeding."
+
+edges:
+  - from: GatherContext
+    to: Ideate
+  - from: Ideate
+    to: Fork
+  - from: Fork
+    to: EvaluateA
+  - from: Fork
+    to: EvaluateB
+  - from: Fork
+    to: EvaluateC
+  - from: EvaluateA
+    to: Join
+  - from: EvaluateB
+    to: Join
+  - from: EvaluateC
+    to: Join
+  - from: Join
+    to: Recommend
+  - from: Recommend
+    to: ADR
+  - from: ADR
+    to: ReviewGate

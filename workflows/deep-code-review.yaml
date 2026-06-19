@@ -1,0 +1,66 @@
+name: Deep Code Review
+version: 1
+min_spine_version: "0.8.0"
+start_node: Fork
+
+nodes:
+  - name: Fork
+    kind: fork
+    description: "Fans out to three parallel review tracks."
+
+  - name: SecurityReview
+    kind: agent
+    description: "Reviews for security vulnerabilities — injection, XSS, auth flaws, unsafe deserialization."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 500
+
+  - name: PerfReview
+    kind: agent
+    description: "Reviews for performance issues — N+1 queries, memory leaks, unnecessary allocations."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 500
+
+  - name: StyleReview
+    kind: agent
+    description: "Reviews for code style, maintainability, and adherence to project conventions."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 500
+
+  - name: Join
+    kind: join
+    description: "Collects all three reviews before passing to the aggregator."
+
+  - name: Aggregator
+    kind: agent
+    description: "Merges the three reviews into a single report, deduplicates findings, ranks by severity."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 500
+
+  - name: PRComments
+    kind: agent
+    description: "Posts the aggregated review as PR comments with line-level annotations."
+    retry_policy:
+      max_attempts: 3
+      backoff_ms: 1000
+
+edges:
+  - from: Fork
+    to: SecurityReview
+  - from: Fork
+    to: PerfReview
+  - from: Fork
+    to: StyleReview
+  - from: SecurityReview
+    to: Join
+  - from: PerfReview
+    to: Join
+  - from: StyleReview
+    to: Join
+  - from: Join
+    to: Aggregator
+  - from: Aggregator
+    to: PRComments

@@ -1,0 +1,63 @@
+name: Universal Developer
+version: 1
+min_spine_version: "0.8.0"
+start_node: Hydrate
+
+nodes:
+  - name: Hydrate
+    kind: agent
+    description: "Gathers context from the repo — git diff, lint output, test results, relevant files."
+    retry_policy:
+      max_attempts: 3
+      backoff_ms: 500
+
+  - name: Plan
+    kind: agent
+    description: "Produces a step-by-step implementation plan based on hydrated context."
+    retry_policy:
+      max_attempts: 3
+      backoff_ms: 500
+
+  - name: Write
+    kind: agent
+    description: "Implements the plan — writes code, updates tests, modifies configs."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 1000
+
+  - name: TestLint
+    kind: checkpoint
+    description: "Runs the test suite and linter on the changes."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 1000
+
+  - name: QualityGate
+    kind: verify
+    description: "Evaluates test/lint results. If failures found, routes back to Write."
+
+  - name: ReviewGate
+    kind: approval_gate
+    description: "Human reviews the final changeset before merge."
+
+  - name: Summary
+    kind: agent
+    description: "Writes a concise summary of what was done, files changed, and key decisions."
+
+edges:
+  - from: Hydrate
+    to: Plan
+  - from: Plan
+    to: Write
+  - from: Write
+    to: TestLint
+  - from: TestLint
+    to: QualityGate
+  - from: QualityGate
+    to: ReviewGate
+    condition: state.lint_passed == true
+  - from: QualityGate
+    to: Write
+    condition: state.lint_passed == false
+  - from: ReviewGate
+    to: Summary

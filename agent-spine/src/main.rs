@@ -27,6 +27,10 @@ enum Command {
         /// Target directory for generated files (default: ~/.config/agent-spine).
         #[arg(short, long)]
         dir: Option<PathBuf>,
+        /// Generate a specific built-in workflow instead of the generic example.
+        /// Use `--with list` to see available workflows.
+        #[arg(short, long)]
+        with: Option<String>,
     },
     /// Display the capabilities planned for the current scaffold.
     Status,
@@ -144,7 +148,7 @@ async fn main() {
 
 async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
     match command {
-        Command::Init { force, dir } => {
+        Command::Init { force, dir, with } => {
             use std::io::Write;
 
             let config_dir = dir.unwrap_or_else(|| {
@@ -155,6 +159,15 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             println!("agent-spine v{} init", env!("CARGO_PKG_VERSION"));
             println!("  config:  {}", config_dir.display());
             println!();
+
+            // Handle --with list (no-op, just display available workflows)
+            if with.as_deref() == Some("list") {
+                println!("Available built-in workflows:");
+                for w in agent_spine::workflows::ALL {
+                    println!("  {:<25} {} — {}", w.name, w.label, w.description);
+                }
+                return Ok(());
+            }
 
             // Prerequisites
             if !force {
@@ -212,24 +225,33 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                 println!("  Config exists: {}", config_path.display());
             }
 
-            // Write example workflow
-            let example_path = workflows_dir.join("example.yaml");
-            if !example_path.exists() {
-                let mut f = std::fs::File::create(&example_path)
-                    .map_err(|e| format!("failed to write example workflow: {e}"))?;
-                write!(f, "{}", EXAMPLE_WORKFLOW)?;
-                println!("✓ Created example: {}", example_path.display());
+            // Determine which workflow to write
+            let (workflow_name, workflow_yaml) = if let Some(ref kind) = with {
+                let entry = agent_spine::workflows::find(kind).ok_or_else(|| {
+                    format!("Unknown workflow '{kind}'. Use `agent-spine init --with list` to see available workflows.")
+                })?;
+                (entry.name, entry.yaml)
             } else {
-                println!("  Example exists: {}", example_path.display());
+                ("example", EXAMPLE_WORKFLOW)
+            };
+
+            let workflow_filename = format!("{workflow_name}.yaml");
+            let workflow_path = workflows_dir.join(&workflow_filename);
+            if !workflow_path.exists() {
+                let mut f = std::fs::File::create(&workflow_path)
+                    .map_err(|e| format!("failed to write workflow: {e}"))?;
+                write!(f, "{workflow_yaml}")?;
+                println!("✓ Created workflow: {}", workflow_path.display());
+            } else {
+                println!("  Workflow exists: {}", workflow_path.display());
             }
 
             println!();
             println!("Next steps:");
             println!("  Validate your workflow:");
-            println!(
-                "    agent-spine validate {}/workflows/example.yaml",
-                config_dir.display()
-            );
+            println!("    agent-spine validate {}", workflow_path.display());
+            println!("  List available built-in workflows:");
+            println!("    agent-spine init --with list");
             println!("  Start the dashboard server:");
             println!("    agent-spine serve --db state.db --port 3000");
             println!("  Check agent-brain connectivity:");

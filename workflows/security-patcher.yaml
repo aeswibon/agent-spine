@@ -1,0 +1,57 @@
+name: Security Patcher
+version: 1
+min_spine_version: "0.8.0"
+start_node: Audit
+
+nodes:
+  - name: Audit
+    kind: agent
+    description: "Scans dependency trees, checks CVE databases, and identifies vulnerable packages."
+    retry_policy:
+      max_attempts: 3
+      backoff_ms: 500
+
+  - name: BumpPackage
+    kind: agent
+    description: "Updates package versions to patched releases, resolves breaking changes."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 1000
+
+  - name: Test
+    kind: checkpoint
+    description: "Runs the full test suite to verify the bump didn't break anything."
+
+  - name: FixCallers
+    kind: agent
+    description: "Fixes API changes and breaking changes introduced by the version bump."
+    retry_policy:
+      max_attempts: 3
+      backoff_ms: 1000
+
+  - name: ReTest
+    kind: checkpoint
+    description: "Re-runs tests after fixing callers."
+
+  - name: OpenPR
+    kind: agent
+    description: "Creates a PR with the fix, changelog entry, and summary of the vulnerability."
+    retry_policy:
+      max_attempts: 2
+      backoff_ms: 500
+
+edges:
+  - from: Audit
+    to: BumpPackage
+  - from: BumpPackage
+    to: Test
+  - from: Test
+    to: FixCallers
+    condition: state.tests_passed == false
+  - from: Test
+    to: OpenPR
+    condition: state.tests_passed == true
+  - from: FixCallers
+    to: ReTest
+  - from: ReTest
+    to: OpenPR
