@@ -42,8 +42,20 @@ jobs:
           pattern: agent-spine-*
           merge-multiple: true
 
+      - name: Extract changelog release notes
+        shell: bash
+        run: |
+          chmod +x .github/scripts/changelog-extract.sh
+          .github/scripts/changelog-extract.sh "${{ github.ref_name }}" > release-notes.md
+          echo "--- Release notes ---"
+          cat release-notes.md
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ github.ref_name }}
+          name: agent-spine ${{ github.ref_name }}
+          body_path: release-notes.md
           files: dist/agent-spine-*
-          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
