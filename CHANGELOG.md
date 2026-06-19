@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-19
+
+### Added
+- **WorkflowManager**: Central module for managing in-process workflow executions in `serve` mode — `submit()`, `list_executions()`, `execution_status()` with background execution via `tokio::spawn`
+- **SubmitWorkflow RPC**: gRPC endpoint to submit YAML-based workflows for execution; returns execution ID immediately
+- **GetExecutionStatus RPC**: Query the status (`running`/`completed`/`failed`) and current nodes of any submitted execution
+- **ListRunningExecutions RPC**: List all in-flight/completed executions managed by the server
+- **Tracing Spans**: `#[tracing::instrument]` annotations on `run()`, `prepare_and_append_snapshot()`, `enrich_from_brain()`, `log_trajectory()`; manual `tracing::Span` propagation in `JoinSet` spawned node tasks
+- **Live Dashboard**: HTML/JS dashboard page served via axum on configurable `--dashboard-port` (defaults to gRPC port + 1); live event stream via gRPC-Web `WatchEvents`, execution table with auto-refresh, workflow YAML submission form
+
+### Changed
+- `Command::Serve` now takes `--dashboard-port` flag for the HTTP dashboard server
+- `Supervisor::emit()` visibility changed to `pub(crate)` for WorkflowManager access
+- gRPC server and dashboard HTTP server run as separate `tokio::spawn` tasks in a `tokio::select!`
+
 ## [0.5.0] - 2026-06-19
 
 ### Added

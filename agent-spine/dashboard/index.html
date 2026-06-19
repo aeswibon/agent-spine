@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>agent-spine Dashboard</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; padding: 24px; }
+h1 { font-size: 1.5rem; margin-bottom: 16px; color: #58a6ff; }
+h2 { font-size: 1.1rem; margin-bottom: 8px; color: #8b949e; }
+.card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.status-bar { display: flex; gap: 24px; margin-bottom: 16px; }
+.status-item { flex: 1; text-align: center; padding: 12px; border-radius: 6px; font-weight: 600; }
+.status-item.running { background: #1a3a2a; color: #3fb950; }
+.status-item.completed { background: #1a2a1a; color: #3fb950; }
+.status-item.failed { background: #3a1a1a; color: #f85149; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #21262d; }
+th { color: #8b949e; font-weight: 600; font-size: 0.85rem; text-transform: uppercase; }
+td { font-size: 0.9rem; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 500; }
+.badge-running { background: #1a3a2a; color: #3fb950; }
+.badge-completed { background: #1a2a1a; color: #3fb950; }
+.badge-failed { background: #3a1a1a; color: #f85149; }
+.events { max-height: 300px; overflow-y: auto; font-family: 'SF Mono', Monaco, monospace; font-size: 0.8rem; }
+.event { padding: 4px 8px; border-left: 3px solid #30363d; margin: 2px 0; }
+.event.node_started { border-color: #58a6ff; }
+.event.node_completed { border-color: #3fb950; }
+.event.node_failed { border-color: #f85149; }
+.event.pending_approval { border-color: #d29922; }
+.event.workflow_completed { border-color: #3fb950; }
+.event.workflow_failed { border-color: #f85149; }
+.event time { color: #8b949e; margin-right: 8px; }
+.refresh-btn { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+.refresh-btn:hover { background: #30363d; }
+.connect-btn { background: #238636; border: none; color: #fff; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; margin-left: 8px; }
+.connect-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.connected { color: #3fb950; }
+.disconnected { color: #f85149; }
+#submit-form { display: flex; flex-direction: column; gap: 8px; }
+#submit-form textarea { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; padding: 8px; font-family: 'SF Mono', Monaco, monospace; font-size: 0.85rem; resize: vertical; min-height: 120px; }
+#submit-form button { align-self: flex-end; background: #238636; border: none; color: #fff; padding: 8px 24px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+#submit-form button:hover { background: #2ea043; }
+</style>
+</head>
+<body>
+<h1>agent-spine Dashboard</h1>
+
+<div class="status-bar">
+  <div class="status-item running" id="status-running">0 running</div>
+  <div class="status-item completed" id="status-completed">0 completed</div>
+  <div class="status-item failed" id="status-failed">0 failed</div>
+</div>
+
+<div style="display: flex; gap: 16px; margin-bottom: 16px;">
+  <button class="refresh-btn" onclick="fetchExecutions()">Refresh</button>
+  <span id="connection-status" class="disconnected">disconnected</span>
+  <button class="connect-btn" id="connect-btn" onclick="toggleStream()">Connect Events</button>
+</div>
+
+<div style="display: flex; gap: 16px;">
+  <div style="flex: 2;">
+    <div class="card">
+      <h2>Executions</h2>
+      <table>
+        <thead><tr><th>ID</th><th>Workflow</th><th>Status</th><th>Nodes</th></tr></thead>
+        <tbody id="executions-body"><tr><td colspan="4">Loading...</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Submit Workflow</h2>
+      <div id="submit-form">
+        <textarea id="workflow-yaml" placeholder="Paste workflow YAML...">name: quick-demo
+start_node: greet
+nodes:
+  - name: greet
+    kind: agent
+    description: Say hello
+edges:
+  - from: greet
+    to: END</textarea>
+        <button onclick="submitWorkflow()">Submit</button>
+        <div id="submit-result"></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex: 1;">
+    <div class="card">
+      <h2>Live Events</h2>
+      <div class="events" id="events-log"><em>Waiting for connection...</em></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE = window.location.origin;
+let eventStream = null;
+let eventsConnected = false;
+
+async function grpcCall(method, body) {
+  const url = `${BASE}/agent-spine.DashboardService/${method}`;
+  const headers = { 'Content-Type': 'application/grpc-web+proto' };
+  const res = await fetch(url, { method: 'POST', headers, body });
+  if (!res.ok) throw new Error(`gRPC error: ${res.status}`);
+  return res;
+}
+
+function decodeBase64(s) {
+  const bin = atob(s);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+
+function encodeBase64(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+function encodeVarint(val) {
+  const bytes = [];
+  while (val >= 128) { bytes.push((val & 127) | 128); val >>>= 7; }
+  bytes.push(val & 127);
+  return bytes;
+}
+
+function encodeLengthDelimited(tag, data) {
+  const key = encodeVarint(tag << 3 | 2);
+  const len = encodeVarint(data.length);
+  return new Uint8Array([...key, ...len, ...data]);
+}
+
+function encodeString(tag, str) {
+  const enc = new TextEncoder().encode(str);
+  return encodeLengthDelimited(tag, enc);
+}
+
+async function fetchExecutions() {
+  try {
+    const url = `${BASE}/agent-spine.DashboardService/ListRunningExecutions`;
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/grpc-web+proto' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const raw = await res.arrayBuffer();
+    const body = new Uint8Array(raw);
+    if (body.length < 5) { updateTable([]); return; }
+    const trailer = body[body.length - 1] === 128;
+    const payload = trailer ? body.slice(5, -5) : body.slice(5);
+    if (payload.length === 0) { updateTable([]); return; }
+    const execs = parseExecutionsResponse(payload);
+    updateTable(execs);
+  } catch (e) {
+    document.getElementById('executions-body').innerHTML = `<tr><td colspan="4" style="color:#f85149">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function parseExecutionsResponse(data) {
+  const execs = [];
+  let pos = 0;
+  while (pos < data.length) {
+    if (pos + 1 > data.length) break;
+    const tag = data[pos] >> 3;
+    const wire = data[pos] & 7;
+    pos++;
+    if (wire === 2) {
+      let len = 0, shift = 0;
+      while (pos < data.length) { len |= (data[pos] & 127) << shift; shift += 7; if (!(data[pos++] & 128)) break; }
+      const end = pos + len;
+      if (end > data.length) break;
+      const sub = data.slice(pos, end);
+      execs.push(parseExecution(sub));
+      pos = end;
+    } else { pos++; }
+  }
+  return execs;
+}
+
+function parseExecution(data) {
+  let pos = 0;
+  let id = '', name = '', status = '', nodes = [];
+  while (pos < data.length) {
+    const tag = data[pos] >> 3;
+    const wire = data[pos] & 7;
+    pos++;
+    if (wire === 2) {
+      let len = 0, shift = 0;
+      while (pos < data.length) { len |= (data[pos] & 127) << shift; shift += 7; if (!(data[pos++] & 128)) break; }
+      const val = new TextDecoder().decode(data.slice(pos, pos + len));
+      if (tag === 1) id = val;
+      else if (tag === 2) name = val;
+      else if (tag === 3) status = val;
+      else if (tag === 4) nodes.push(val);
+      pos += len;
+    } else { pos++; }
+  }
+  return { id, name, status, nodes };
+}
+
+function updateTable(execs) {
+  const tbody = document.getElementById('executions-body');
+  if (execs.length === 0) { tbody.innerHTML = '<tr><td colspan="4" style="color:#8b949e">No executions</td></tr>'; }
+  else {
+    tbody.innerHTML = execs.map(e => `
+      <tr>
+        <td style="font-family:monospace;font-size:0.8rem">${e.id.slice(0,12)}...</td>
+        <td>${e.name}</td>
+        <td><span class="badge badge-${e.status}">${e.status}</span></td>
+        <td>${e.nodes.join(', ') || '-'}</td>
+      </tr>
+    `).join('');
+  }
+  const counts = { running: 0, completed: 0, failed: 0 };
+  execs.forEach(e => { if (counts[e.status] !== undefined) counts[e.status]++; });
+  document.getElementById('status-running').textContent = `${counts.running} running`;
+  document.getElementById('status-completed').textContent = `${counts.completed} completed`;
+  document.getElementById('status-failed').textContent = `${counts.failed} failed`;
+}
+
+async function submitWorkflow() {
+  const yaml = document.getElementById('workflow-yaml').value;
+  const resultDiv = document.getElementById('submit-result');
+  resultDiv.textContent = 'Submitting...';
+  const payloadBytes = encodeString(1, yaml);
+  const emptyPayload = encodeString(2, '{}');
+  const body = new Uint8Array([...payloadBytes, ...emptyPayload]);
+  const frame = new Uint8Array(body.length + 5);
+  frame[0] = 0; frame[1] = body.length & 255; frame[2] = (body.length >> 8) & 255;
+  frame[3] = (body.length >> 16) & 255; frame[4] = body.length >> 24;
+  frame.set(body, 5);
+  try {
+    const res = await fetch(`${BASE}/agent-spine.DashboardService/SubmitWorkflow`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/grpc-web+proto' },
+      body: frame,
+    });
+    const raw = await res.arrayBuffer();
+    resultDiv.textContent = `Submitted (raw response: ${raw.byteLength} bytes)`;
+    fetchExecutions();
+  } catch (e) {
+    resultDiv.textContent = `Error: ${e.message}`;
+  }
+}
+
+function toggleStream() {
+  const btn = document.getElementById('connect-btn');
+  if (eventsConnected) {
+    if (eventStream) eventStream.abort();
+    eventsConnected = false;
+    btn.textContent = 'Connect Events';
+    document.getElementById('connection-status').textContent = 'disconnected';
+    document.getElementById('connection-status').className = 'disconnected';
+    return;
+  }
+  document.getElementById('events-log').innerHTML = '<em>Connecting...</em>';
+  btn.disabled = true;
+  const controller = new AbortController();
+  eventStream = controller;
+  fetch(`${BASE}/agent-spine.SupervisorService/WatchEvents`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/grpc-web+proto' },
+    signal: controller.signal,
+  }).then(async res => {
+    eventsConnected = true;
+    btn.textContent = 'Disconnect';
+    btn.disabled = false;
+    document.getElementById('connection-status').textContent = 'connected';
+    document.getElementById('connection-status').className = 'connected';
+    const reader = res.body.getReader();
+    const log = document.getElementById('events-log');
+    let buf = new Uint8Array(0);
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const tmp = new Uint8Array(buf.length + value.length);
+      tmp.set(buf); tmp.set(value, buf.length);
+      buf = tmp;
+      while (buf.length >= 5) {
+        const flags = buf[0];
+        const msgLen = buf[1] | (buf[2] << 8) | (buf[3] << 16) | (buf[4] << 24);
+        const total = 5 + msgLen;
+        if (buf.length < total) break;
+        const msg = buf.slice(5, total);
+        buf = buf.slice(total);
+        const ev = parseEvent(msg);
+        if (ev) appendEvent(ev);
+      }
+    }
+  }).catch(e => {
+    if (e.name !== 'AbortError') {
+      document.getElementById('events-log').innerHTML = `<em style="color:#f85149">Stream error: ${e.message}</em>`;
+    }
+    btn.disabled = false;
+    document.getElementById('connection-status').textContent = 'disconnected';
+    document.getElementById('connection-status').className = 'disconnected';
+  });
+}
+
+function parseEvent(data) {
+  let pos = 0, ev = {};
+  while (pos < data.length) {
+    const tag = data[pos] >> 3;
+    const wire = data[pos] & 7;
+    pos++;
+    if (wire === 2) {
+      let len = 0, shift = 0;
+      while (pos < data.length) { len |= (data[pos] & 127) << shift; shift += 7; if (!(data[pos++] & 128)) break; }
+      const val = new TextDecoder().decode(data.slice(pos, pos + len));
+      if (tag === 1) ev.type = val;
+      else if (tag === 2) ev.node = val;
+      else if (tag === 3) ev.node_kind = val;
+      else if (tag === 4) ev.desc = val;
+      else if (tag === 5) ev.wf = val;
+      else if (tag === 6) ev.exec = val;
+      else if (tag === 7) ev.err = val;
+      pos += len;
+    } else { pos++; }
+  }
+  if (!ev.type) return null;
+  return ev;
+}
+
+function appendEvent(ev) {
+  const log = document.getElementById('events-log');
+  const div = document.createElement('div');
+  div.className = `event ${ev.type}`;
+  const time = new Date().toLocaleTimeString();
+  let text = `[${time}] ${ev.type}`;
+  if (ev.node) text += ` node=${ev.node}`;
+  if (ev.node_kind) text += ` (${ev.node_kind})`;
+  if (ev.wf) text += ` workflow=${ev.wf}`;
+  if (ev.exec) text += ` exec=${ev.exec.slice(0,12)}`;
+  if (ev.err) text += ` error=${ev.err}`;
+  div.innerHTML = `<time>${time}</time>${text}`;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  if (log.children.length > 200) log.removeChild(log.firstChild);
+}
+
+fetchExecutions();
+setInterval(fetchExecutions, 5000);
+</script>
+</body>
+</html>

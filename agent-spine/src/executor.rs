@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use regex::Regex;
 use serde_json::Value;
 use thiserror::Error;
+use tracing::Instrument;
 
 use crate::brain_router::BrainRouter;
 use crate::condition;
@@ -168,6 +169,7 @@ impl<S: WorkflowState> Executor<S> {
         self
     }
 
+    #[tracing::instrument(skip(self, store), fields(seq = snapshot.sequence()))]
     fn prepare_and_append_snapshot(
         &self,
         store: &Arc<Mutex<S>>,
@@ -187,6 +189,7 @@ impl<S: WorkflowState> Executor<S> {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, node_payload))]
     fn enrich_from_brain(&mut self, node_name: &str, node_kind: &str, node_payload: &mut Value) {
         if let Some(brain) = self.brain.as_mut() {
             let description = self
@@ -208,6 +211,7 @@ impl<S: WorkflowState> Executor<S> {
         }
     }
 
+    #[tracing::instrument(skip(self))]
     fn log_trajectory(
         &mut self,
         exec_id: &str,
@@ -234,6 +238,7 @@ impl<S: WorkflowState> Executor<S> {
     }
 
     /// Execute the workflow from start to finish.
+    #[tracing::instrument(skip(self, initial_payload), fields(workflow = %self.workflow.definition().name()))]
     pub async fn run(&mut self, initial_payload: Value) -> Result<ExecutionId, ExecutorError> {
         let execution_id = ExecutionId::new();
         let exec_id_str = execution_id.to_string();
@@ -303,82 +308,86 @@ impl<S: WorkflowState> Executor<S> {
                 let workflow_name = self.workflow.definition().name().to_owned();
                 tracing::debug!("Spawning task for node '{}'", task.name);
 
-                join_set.spawn(async move {
-                    let node_kind = task.kind.to_string();
-                    let description = task.description.clone();
-                    let next_payload = match task.kind {
-                        NodeKind::Agent | NodeKind::Checkpoint | NodeKind::Router => {
-                            let mut retries = 0;
-                            let max_retries = task.retry_policy.max_attempts;
-                            let base_backoff = task.retry_policy.backoff_ms;
-                            loop {
-                                match supervisor
+                let span = tracing::info_span!("node_exec", node = %task.name, kind = %task.kind);
+                join_set.spawn(
+                    async move {
+                        let node_kind = task.kind.to_string();
+                        let description = task.description.clone();
+                        let next_payload = match task.kind {
+                            NodeKind::Agent | NodeKind::Checkpoint | NodeKind::Router => {
+                                let mut retries = 0;
+                                let max_retries = task.retry_policy.max_attempts;
+                                let base_backoff = task.retry_policy.backoff_ms;
+                                loop {
+                                    match supervisor
+                                        .delegate(
+                                            task.name.clone(),
+                                            node_kind.clone(),
+                                            description.clone(),
+                                            workflow_name.clone(),
+                                            task.payload.clone(),
+                                            Some(std::time::Duration::from_secs(30)),
+                                        )
+                                        .await
+                                    {
+                                        Ok(res) => break res,
+                                        Err(e) => {
+                                            if retries >= max_retries {
+                                                tracing::error!(
+                                                    "Node '{}' failed after {} retries: {}",
+                                                    task.name,
+                                                    max_retries,
+                                                    e
+                                                );
+                                                return Err(ExecutorError::SupervisorFailed);
+                                            }
+                                            retries += 1;
+                                            let backoff_ms = base_backoff * 2u64.pow(retries);
+                                            tracing::warn!(
+                                                "Node '{}' failed: {}. Retrying ({}/{}) in {}ms...",
+                                                task.name,
+                                                e,
+                                                retries,
+                                                max_retries,
+                                                backoff_ms
+                                            );
+                                            tokio::time::sleep(std::time::Duration::from_millis(
+                                                backoff_ms,
+                                            ))
+                                            .await;
+                                        }
+                                    }
+                                }
+                            }
+                            NodeKind::Fork | NodeKind::Join => task.payload,
+                            NodeKind::Verify => task.payload,
+                            NodeKind::ApprovalGate => {
+                                let result = supervisor
                                     .delegate(
                                         task.name.clone(),
                                         node_kind.clone(),
                                         description.clone(),
                                         workflow_name.clone(),
-                                        task.payload.clone(),
-                                        Some(std::time::Duration::from_secs(30)),
+                                        task.payload,
+                                        None,
                                     )
                                     .await
-                                {
-                                    Ok(res) => break res,
-                                    Err(e) => {
-                                        if retries >= max_retries {
-                                            tracing::error!(
-                                                "Node '{}' failed after {} retries: {}",
-                                                task.name,
-                                                max_retries,
-                                                e
-                                            );
-                                            return Err(ExecutorError::SupervisorFailed);
-                                        }
-                                        retries += 1;
-                                        let backoff_ms = base_backoff * 2u64.pow(retries);
-                                        tracing::warn!(
-                                            "Node '{}' failed: {}. Retrying ({}/{}) in {}ms...",
-                                            task.name,
-                                            e,
-                                            retries,
-                                            max_retries,
-                                            backoff_ms
-                                        );
-                                        tokio::time::sleep(std::time::Duration::from_millis(
-                                            backoff_ms,
-                                        ))
-                                        .await;
-                                    }
-                                }
-                            }
-                        }
-                        NodeKind::Fork | NodeKind::Join => task.payload,
-                        NodeKind::Verify => task.payload,
-                        NodeKind::ApprovalGate => {
-                            let result = supervisor
-                                .delegate(
-                                    task.name.clone(),
-                                    node_kind.clone(),
-                                    description.clone(),
-                                    workflow_name.clone(),
-                                    task.payload,
-                                    None,
-                                )
-                                .await
-                                .map_err(|_| ExecutorError::SupervisorFailed)?;
+                                    .map_err(|_| ExecutorError::SupervisorFailed)?;
 
-                            if result.get("approved").and_then(Value::as_bool) != Some(true) {
-                                tracing::error!(
-                                    "Human rejected execution at ApprovalGate '{}'",
-                                    task.name
-                                );
-                                return Err(ExecutorError::ExecutionRejected);
+                                if result.get("approved").and_then(Value::as_bool) != Some(true) {
+                                    tracing::error!(
+                                        "Human rejected execution at ApprovalGate '{}'",
+                                        task.name
+                                    );
+                                    return Err(ExecutorError::ExecutionRejected);
+                                }
+                                result
                             }
-                            result
-                        }
-                    };
-                    Ok::<_, ExecutorError>((task.name, next_payload))
-                });
+                        };
+                        Ok::<_, ExecutorError>((task.name, next_payload))
+                    }
+                    .instrument(span),
+                );
             }
 
             // ── Phase 3: Collect results ──

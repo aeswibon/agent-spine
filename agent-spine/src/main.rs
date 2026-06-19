@@ -84,6 +84,9 @@ enum Command {
         /// Port to listen on
         #[arg(short, long, default_value_t = 3000)]
         port: u16,
+        /// Dashboard HTTP port (defaults to port + 1)
+        #[arg(long, default_value_t = 3001)]
+        dashboard_port: u16,
     },
 }
 
@@ -436,7 +439,11 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         Command::Brain { action } => run_brain(action).await,
-        Command::Serve { db, port } => {
+        Command::Serve {
+            db,
+            port,
+            dashboard_port,
+        } => {
             info!("Starting agent-spine gRPC server on port {}", port);
 
             let wf_manager = agent_spine::WorkflowManager::new(db.clone(), false);
@@ -461,23 +468,48 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     supervisor_api,
                 );
 
-            let addr = format!("0.0.0.0:{}", port).parse()?;
-            info!("Listening on grpc://{}", addr);
+            // Spawn gRPC server
+            let grpc_addr: std::net::SocketAddr = format!("0.0.0.0:{}", port).parse()?;
+            info!("Listening on grpc://{}", grpc_addr);
+            let grpc_handle = {
+                let dash = dashboard_svc;
+                let sup = supervisor_svc;
+                tokio::spawn(async move {
+                    let cors = tower_http::cors::CorsLayer::new()
+                        .allow_origin(tower_http::cors::Any)
+                        .allow_headers(tower_http::cors::Any)
+                        .allow_methods(tower_http::cors::Any);
 
-            // Enable gRPC-Web and CORS
-            let cors = tower_http::cors::CorsLayer::new()
-                .allow_origin(tower_http::cors::Any)
-                .allow_headers(tower_http::cors::Any)
-                .allow_methods(tower_http::cors::Any);
+                    tonic::transport::Server::builder()
+                        .accept_http1(true)
+                        .layer(cors)
+                        .layer(tonic_web::GrpcWebLayer::new())
+                        .add_service(dash)
+                        .add_service(sup)
+                        .serve(grpc_addr)
+                        .await
+                })
+            };
 
-            tonic::transport::Server::builder()
-                .accept_http1(true)
-                .layer(cors)
-                .layer(tonic_web::GrpcWebLayer::new())
-                .add_service(dashboard_svc)
-                .add_service(supervisor_svc)
-                .serve(addr)
-                .await?;
+            // Spawn dashboard HTTP server
+            let dash_addr: std::net::SocketAddr = format!("0.0.0.0:{}", dashboard_port).parse()?;
+            info!("Dashboard on http://{}", dash_addr);
+            let dash_handle = tokio::spawn(async move {
+                use axum::response::Html;
+
+                let app = axum::Router::new().route(
+                    "/",
+                    axum::routing::get(|| async { Html(include_str!("../dashboard/index.html")) }),
+                );
+
+                let listener = tokio::net::TcpListener::bind(dash_addr).await.unwrap();
+                axum::serve(listener, app).await
+            });
+
+            tokio::select! {
+                r = grpc_handle => r??,
+                r = dash_handle => r??,
+            }
 
             Ok(())
         }
