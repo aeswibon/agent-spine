@@ -5,6 +5,7 @@ use tracing;
 
 use crate::mcp_bridge::{self, McpBridge, RouteLimits, RouteTaskResponse};
 use crate::router::{ConfidenceRouter, RouterAction};
+use crate::wake_on_call;
 
 pub use agent_body_core::BrainProvenance;
 
@@ -43,15 +44,33 @@ impl BrainRouter {
             self.connect_attempted = true;
             let rt = tokio::runtime::Handle::try_current();
             match rt {
-                Ok(handle) => match handle.block_on(McpBridge::connect(self.cwd.as_deref())) {
-                    Ok(bridge) => {
-                        tracing::info!("connected to agent-brain for workflow routing");
-                        self.bridge = Some(bridge);
+                Ok(handle) => {
+                    // Try normal connect first
+                    match handle.block_on(McpBridge::connect(self.cwd.as_deref())) {
+                        Ok(bridge) => {
+                            tracing::info!("connected to agent-brain for workflow routing");
+                            self.bridge = Some(bridge);
+                        }
+                        Err(first_err) => {
+                            tracing::warn!("agent-brain not reachable, attempting wake-on-call: {first_err}");
+                            // Wake-on-call: spawn brain and retry
+                            let _child = handle.block_on(wake_on_call::try_spawn_brain());
+                            if handle.block_on(wake_on_call::wait_for_brain(30)) {
+                                match handle.block_on(McpBridge::connect(self.cwd.as_deref())) {
+                                    Ok(bridge) => {
+                                        tracing::info!("connected to agent-brain via wake-on-call");
+                                        self.bridge = Some(bridge);
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("wake-on-call connect failed: {e}");
+                                    }
+                                }
+                            } else {
+                                tracing::warn!("wake-on-call failed, agent-brain did not start");
+                            }
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!("agent-brain not available, using fallback router: {e}");
-                    }
-                },
+                }
                 Err(_) => {
                     tracing::warn!("no tokio runtime available, using fallback router");
                 }

@@ -16,6 +16,7 @@ pub mod router;
 pub mod state;
 pub mod supervisor;
 pub mod workflow;
+pub mod wake_on_call;
 pub mod workflow_manager;
 pub mod workflows;
 
