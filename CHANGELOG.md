@@ -11,7 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- (placeholder)
+- **Docker sandbox execution** — `NodeKind::Sandbox` now runs commands in Docker containers instead of delegating to AI supervisor; extracts `_sandbox_command` from payload, returns `_sandbox_stdout`/`_sandbox_stderr`/`_sandbox_exit_code`
+- **`sandbox::run_sandbox()`** — async Docker execution with configurable image, timeout, and workdir mount; uses `docker run --rm -i`
+
+### Changed
+
+- `NodeTask` gains `sandbox_config` field for per-node image/timeout settings
+- Version bumped from `0.10.0` to `0.11.0`
 
 ## [0.10.0] - 2026-06-20
 
