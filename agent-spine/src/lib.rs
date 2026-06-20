@@ -5,11 +5,13 @@
 )]
 pub mod agent;
 pub mod api;
+pub mod autonomic_api;
 pub mod brain_router;
 pub mod cancellation;
 pub(crate) mod condition;
 pub mod event;
 pub mod executor;
+pub mod global_workspace;
 pub mod idempotency;
 pub mod mcp_bridge;
 pub mod meta_router;

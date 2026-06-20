@@ -48,9 +48,9 @@ enum Command {
         /// Initial JSON payload.
         #[arg(short, long, default_value = "{}")]
         payload: String,
-        /// Path to SQLite database
-        #[arg(short, long, default_value = "state.db")]
-        db: PathBuf,
+        /// Path to SQLite database (default: ~/.autonomic/logs/spine/state.db)
+        #[arg(short, long)]
+        db: Option<PathBuf>,
         /// Enable agent-brain routing and enrichment.
         #[arg(short, long)]
         brain: bool,
@@ -64,16 +64,16 @@ enum Command {
         /// Execution ID to inspect.
         execution_id: String,
         /// Path to SQLite database
-        #[arg(short, long, default_value = "state.db")]
-        db: PathBuf,
+        #[arg(short, long)]
+        db: Option<PathBuf>,
     },
     /// Replay an execution to recreate its final state.
     Replay {
         /// Execution ID to replay.
         execution_id: String,
         /// Path to SQLite database
-        #[arg(short, long, default_value = "state.db")]
-        db: PathBuf,
+        #[arg(short, long)]
+        db: Option<PathBuf>,
     },
     /// Interact with the agent-brain MCP server.
     Brain {
@@ -93,8 +93,8 @@ enum Command {
     /// Serve the Live Dashboard API.
     Serve {
         /// Path to SQLite database
-        #[arg(short, long, default_value = "state.db")]
-        db: PathBuf,
+        #[arg(short, long)]
+        db: Option<PathBuf>,
         /// Port to listen on
         #[arg(short, long, default_value_t = 3000)]
         port: u16,
@@ -124,6 +124,9 @@ enum EventCommand {
         /// Port to listen on.
         #[arg(short, long, default_value_t = 3100)]
         port: u16,
+        /// SQLite state db for autonomic workflow API (default: global workspace).
+        #[arg(long)]
+        db: Option<PathBuf>,
     },
     /// Publish an event to the bus.
     Pub {
@@ -457,8 +460,9 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
 
             let validated = WorkflowDefinition::from_path(workflow_path)?.validate()?;
             let initial_payload = serde_json::from_str(&payload)?;
+            let db = agent_spine::global_workspace::resolve_state_db(db)?;
 
-            let store = agent_spine::state::SqliteStateStore::new(db)?;
+            let store = agent_spine::state::SqliteStateStore::new(&db)?;
             let store = std::sync::Arc::new(std::sync::Mutex::new(store));
 
             let supervisor = agent_spine::supervisor::Supervisor::new();
@@ -469,18 +473,37 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             let cancel = agent_spine::cancellation::CancelToken::new();
             let _signal_task = agent_spine::cancellation::setup_signal_handler(cancel.clone());
 
-            let mut executor = agent_spine::executor::Executor::new(validated, store, supervisor);
+            let workflow_name = validated.definition().name().to_string();
+            let mut executor =
+                agent_spine::executor::Executor::new(validated, store.clone(), supervisor);
             if brain {
                 executor = executor.with_brain(None);
             }
             executor = executor.with_cancel_token(cancel);
 
             let execution_id = executor.run(initial_payload).await?;
+            use agent_spine::WorkflowState;
+            let history = {
+                let guard = store.lock().map_err(|_| "state lock poisoned")?;
+                guard.history(execution_id)
+            };
+            let graph_path = {
+                let guard = store.lock().map_err(|_| "state lock poisoned")?;
+                agent_spine::global_workspace::export_execution_graph(
+                    &*guard,
+                    execution_id,
+                    &workflow_name,
+                )?
+            };
+            let _dag_path =
+                agent_spine::global_workspace::export_dag_summary(&history, execution_id)?;
             println!("Workflow completed. Execution ID: {}", execution_id);
+            println!("Execution graph: {}", graph_path.display());
             Ok(())
         }
         Command::Inspect { execution_id, db } => {
-            let store = agent_spine::state::SqliteStateStore::new(db)?;
+            let db = agent_spine::global_workspace::resolve_state_db(db)?;
+            let store = agent_spine::state::SqliteStateStore::new(&db)?;
             let id = std::str::FromStr::from_str(&execution_id)?;
             use agent_spine::WorkflowState;
             let history = store.history(id);
@@ -505,7 +528,8 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         Command::Replay { execution_id, db } => {
-            let store = agent_spine::state::SqliteStateStore::new(db)?;
+            let db = agent_spine::global_workspace::resolve_state_db(db)?;
+            let store = agent_spine::state::SqliteStateStore::new(&db)?;
             let id = std::str::FromStr::from_str(&execution_id)?;
             use agent_spine::WorkflowState;
             let history = store.history(id);
@@ -546,11 +570,12 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             port,
             dashboard_port,
         } => {
+            let db = agent_spine::global_workspace::resolve_state_db(db)?;
             info!("Starting agent-spine gRPC server on port {}", port);
 
             let wf_manager = agent_spine::WorkflowManager::new(db.clone(), false);
 
-            let store = agent_spine::state::SqliteStateStore::new(db)?;
+            let store = agent_spine::state::SqliteStateStore::new(&db)?;
             let store = std::sync::Arc::new(std::sync::Mutex::new(store));
 
             let supervisor = agent_spine::supervisor::Supervisor::new();
@@ -727,10 +752,11 @@ async fn run_event(command: EventCommand) -> Result<(), Box<dyn std::error::Erro
     use std::sync::Arc;
 
     match command {
-        EventCommand::Serve { port } => {
+        EventCommand::Serve { port, db } => {
+            let db = agent_spine::global_workspace::resolve_state_db(db).ok();
             let bus = Arc::new(InMemoryEventBus::new(256));
             let registry = Arc::new(AgentRegistry::new());
-            let handle = start_event_server(bus, registry, port);
+            let handle = start_event_server(bus, registry, port, db);
             handle.await.unwrap();
             Ok(())
         }

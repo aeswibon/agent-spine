@@ -319,9 +319,13 @@ pub fn start_event_server(
     bus: Arc<dyn EventBus>,
     registry: Arc<AgentRegistry>,
     port: u16,
+    db_path: Option<std::path::PathBuf>,
 ) -> tokio::task::JoinHandle<()> {
     let api = EventApi::new(bus, registry);
-    let router = api.router();
+    let mut router = api.router();
+    if let Some(db) = db_path {
+        router = crate::autonomic_api::merge_autonomic_routes(router, db);
+    }
     tokio::spawn(async move {
         let addr: std::net::SocketAddr = format!("0.0.0.0:{port}").parse().unwrap();
         tracing::info!("Event bus listening on http://{}", addr);
