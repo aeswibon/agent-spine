@@ -79,20 +79,27 @@ Every non-trivial AI coding task needs structure — but most teams improvise it
 
 ## How a run works
 
-```text
-agent-spine run workflow.yaml
-  → validate workflow definition
-  → spawn LocalAgent (background tokio task)
-  → Executor walks graph transitions:
-     - Agent nodes: pause → LocalAgent auto-resolves with {_node, _status}
-     - ApprovalGate: pause → auto-approves (or --auto-approve=false for HITL)
-     - Checkpoint: records snapshot, continues
-     - Verify: records snapshot, continues
-  → parallel fan-out across multiple outgoing edges
-  → JoinSet merges branch results at fan-in nodes
-  → on failure: exponential backoff retry (up to policy limit)
-  → on approval rejection: execution error
-  → immutable snapshots written to state store at every transition
+```mermaid
+flowchart TD
+    Start[agent-spine run workflow.yaml] --> Validate[Validate workflow definition]
+    Validate --> Spawn[Spawn LocalAgent]
+    Spawn --> Executor[Executor walks graph]
+    
+    Executor --> AgentNode{Agent Node}
+    AgentNode -->|pause| LocalAgent[LocalAgent auto-resolves]
+    
+    Executor --> ApprovalNode{ApprovalGate}
+    ApprovalNode -->|pause| HITL[Human / Auto Approve]
+    
+    Executor --> CheckpointNode{Checkpoint / Verify}
+    CheckpointNode --> Snap[Record Snapshot]
+    
+    LocalAgent --> FanOut[Parallel fan-out]
+    HITL --> FanOut
+    Snap --> FanOut
+    
+    FanOut --> Join[JoinSet merges branches]
+    Join --> Store[(State Store<br>SQLite / JSONL)]
 ```
 
 ---
