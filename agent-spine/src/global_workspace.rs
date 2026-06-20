@@ -30,7 +30,10 @@ pub fn export_execution_graph(
         "snapshot_count": history.len(),
         "snapshots": history,
     });
-    std::fs::write(&path, serde_json::to_vec_pretty(&payload).map_err(io::Error::other)?)?;
+    std::fs::write(
+        &path,
+        serde_json::to_vec_pretty(&payload).map_err(io::Error::other)?,
+    )?;
     Ok(path)
 }
 
