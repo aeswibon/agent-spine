@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-20
+
+### Added
+
+- **JetStream event bus** — `event serve --nats-url` uses durable JetStream (falls back to in-memory)
+- **Async sandbox dispatch** — Sandbox nodes publish to `autonomic.execute.sandbox` when `AUTONOMIC_NATS_URL` is set
+- **Workflow state bridge** — Supervisor events published to `autonomic.spine.state` via JetStream
+
+### Changed
+
+- **`nats` feature enabled by default** — JetStream integration available out of the box
+- Version bumped from `0.13.0` to `0.14.0`
+
 ## [0.13.0] - 2026-06-20
 
 ### Added
