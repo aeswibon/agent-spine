@@ -52,7 +52,9 @@ impl BrainRouter {
                             self.bridge = Some(bridge);
                         }
                         Err(first_err) => {
-                            tracing::warn!("agent-brain not reachable, attempting wake-on-call: {first_err}");
+                            tracing::warn!(
+                                "agent-brain not reachable, attempting wake-on-call: {first_err}"
+                            );
                             // Wake-on-call: spawn brain and retry
                             let _child = handle.block_on(wake_on_call::try_spawn_brain());
                             if handle.block_on(wake_on_call::wait_for_brain(30)) {
@@ -253,14 +255,16 @@ impl BrainRouter {
     ) -> Option<crate::mcp_bridge::GetContextResponse> {
         let bridge = self.bridge.as_mut()?;
         let rt = tokio::runtime::Handle::try_current().ok()?;
-        let resp = rt.block_on(bridge.get_context_for_node(
-            node_kind,
-            node_name,
-            description.unwrap_or(""),
-            workflow_name,
-            task_description,
-            300,
-        )).ok()?;
+        let resp = rt
+            .block_on(bridge.get_context_for_node(
+                node_kind,
+                node_name,
+                description.unwrap_or(""),
+                workflow_name,
+                task_description,
+                300,
+            ))
+            .ok()?;
         Some(resp)
     }
 

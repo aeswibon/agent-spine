@@ -218,7 +218,10 @@ impl<S: WorkflowState> Executor<S> {
                 node_name,
                 description,
                 workflow_name,
-                &format!("Execute node '{}' (kind={}) in workflow '{}'", node_name, node_kind, workflow_name),
+                &format!(
+                    "Execute node '{}' (kind={}) in workflow '{}'",
+                    node_name, node_kind, workflow_name
+                ),
             ) {
                 if let Some(obj) = node_payload.as_object_mut() {
                     let rules_json = serde_json::to_value(&ctx.items).unwrap_or_default();

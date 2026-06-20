@@ -49,11 +49,7 @@ pub async fn try_spawn_brain() -> Option<Child> {
     let path = find_brain().await?;
     info!("Found agent-brain at {:?}, spawning...", path);
 
-    match Command::new(&path)
-        .arg("serve")
-        .kill_on_drop(true)
-        .spawn()
-    {
+    match Command::new(&path).arg("serve").kill_on_drop(true).spawn() {
         Ok(child) => {
             let pid = child.id().unwrap_or(0);
             info!("agent-brain spawned successfully (pid: {})", pid);
