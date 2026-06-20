@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-20
+
+### Added
+
+- **Global workspace paths** — default `state.db` and execution JSON graphs under `~/.autonomic/logs/spine/`
+- **Autonomic HTTP API** — `/api/v1/health`, `/api/v1/workflows/run`, `/api/v1/executions/{id}` merged into the event server
+
+### Fixed
+
+- **NATS subscribe** — handle `async-nats` `subscribe()` returning `Result` (Clippy/CI)
+
+### Changed
+
+- Version bumped from `0.12.0` to `0.13.0`
+
 ## [0.12.0] - 2026-06-20
 
 ### Added
