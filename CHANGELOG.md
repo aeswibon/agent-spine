@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-20
+
+### Added
+
+- **Omnichannel event bus** — new `event` module with `EventBus` trait, `InMemoryEventBus`, and optional `NatsEventBus` (behind `nats` feature flag) for topic-based pub/sub inter-agent communication
+- **Agent registry** — `AgentRegistry` with register, list, get, heartbeat for agent service discovery
+- **HTTP event API** — axum router with `POST /api/v1/events` (publish), `GET /api/v1/events/subscribe` (SSE stream), `POST /api/v1/agents` (register), `GET /api/v1/agents` (list), `GET /api/v1/agents/{name}` (get/heartbeat)
+- **CLI commands** — `agent-spine event serve` (start bus on port 3100), `event pub` (publish via HTTP), `event sub` (SSE subscribe via HTTP), `agent list`, `agent register`, `agent info`
+- **`start_event_server()`** — one-call function to start the event bus HTTP server as a background tokio task
+- **New dependencies**: `async-trait`, `chrono`, `futures`, `async-stream`, `reqwest` (CLI), `async-nats` (optional)
+
+### Changed
+
+- Version bumped from `0.11.0` to `0.12.0`
+
 ## [0.11.0] - 2026-06-20
 
 ### Added

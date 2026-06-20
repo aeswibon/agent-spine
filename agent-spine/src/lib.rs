@@ -8,6 +8,7 @@ pub mod api;
 pub mod brain_router;
 pub mod cancellation;
 pub(crate) mod condition;
+pub mod event;
 pub mod executor;
 pub mod idempotency;
 pub mod mcp_bridge;

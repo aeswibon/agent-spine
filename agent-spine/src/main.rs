@@ -80,6 +80,16 @@ enum Command {
         #[command(subcommand)]
         action: BrainCommand,
     },
+    /// Event bus operations.
+    Event {
+        #[command(subcommand)]
+        action: EventCommand,
+    },
+    /// Agent registry operations.
+    Agent {
+        #[command(subcommand)]
+        action: AgentCommand,
+    },
     /// Serve the Live Dashboard API.
     Serve {
         /// Path to SQLite database
@@ -105,6 +115,70 @@ enum BrainCommand {
     },
     /// Show agent-brain index and status info.
     Status,
+}
+
+#[derive(Debug, Subcommand)]
+enum EventCommand {
+    /// Start the event bus server.
+    Serve {
+        /// Port to listen on.
+        #[arg(short, long, default_value_t = 3100)]
+        port: u16,
+    },
+    /// Publish an event to the bus.
+    Pub {
+        /// Event subject (e.g. "agent.heart.beat").
+        subject: String,
+        /// Event payload as JSON string.
+        payload: String,
+        /// Source agent name.
+        #[arg(short, long, default_value = "agent-spine")]
+        source: String,
+        /// Event bus URL (default: http://localhost:3100).
+        #[arg(short, long, default_value = "http://localhost:3100")]
+        url: String,
+    },
+    /// Subscribe to events from the bus (prints to stdout as JSON).
+    Sub {
+        /// Subject filter (e.g. "agent.heart.>" for wildcard).
+        #[arg(short, long, default_value = ">")]
+        subject: String,
+        /// Event bus URL (default: http://localhost:3100).
+        #[arg(short, long, default_value = "http://localhost:3100")]
+        url: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AgentCommand {
+    /// List registered agents.
+    List {
+        /// Event bus URL (default: http://localhost:3100).
+        #[arg(short, long, default_value = "http://localhost:3100")]
+        url: String,
+    },
+    /// Register an agent with the bus.
+    Register {
+        /// Agent name.
+        name: String,
+        /// Agent version.
+        #[arg(short, long, default_value = "0.1.0")]
+        version: String,
+        /// Capabilities (comma-separated).
+        #[arg(short, long, default_value = "")]
+        capabilities: String,
+        /// Event bus URL (default: http://localhost:3100).
+        #[arg(short, long, default_value = "http://localhost:3100")]
+        url: String,
+    },
+    /// Get info about a specific agent.
+    Info {
+        /// Agent name.
+        name: String,
+        /// Event bus URL (default: http://localhost:3100).
+        #[arg(short, long, default_value = "http://localhost:3100")]
+        url: String,
+    },
 }
 
 use tracing_subscriber::{Registry, layer::SubscriberExt, util::SubscriberInitExt};
@@ -465,6 +539,8 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         Command::Brain { action } => run_brain(action).await,
+        Command::Event { action } => run_event(action).await,
+        Command::Agent { action } => run_agent(action).await,
         Command::Serve {
             db,
             port,
@@ -641,6 +717,116 @@ async fn run_brain(command: BrainCommand) -> Result<(), Box<dyn std::error::Erro
             println!("  Memory:  {} facts stored (showing up to 5)", facts.len());
 
             drop(bridge);
+            Ok(())
+        }
+    }
+}
+
+async fn run_event(command: EventCommand) -> Result<(), Box<dyn std::error::Error>> {
+    use agent_spine::event::{AgentRegistry, InMemoryEventBus, start_event_server};
+    use std::sync::Arc;
+
+    match command {
+        EventCommand::Serve { port } => {
+            let bus = Arc::new(InMemoryEventBus::new(256));
+            let registry = Arc::new(AgentRegistry::new());
+            let handle = start_event_server(bus, registry, port);
+            handle.await.unwrap();
+            Ok(())
+        }
+        EventCommand::Pub {
+            subject,
+            payload,
+            source,
+            url,
+        } => {
+            let client = reqwest::Client::new();
+            let body = serde_json::json!({
+                "subject": subject,
+                "payload": serde_json::from_str::<serde_json::Value>(&payload)?,
+                "source": source,
+            });
+            let resp = client
+                .post(format!("{}/api/v1/events", url))
+                .json(&body)
+                .send()
+                .await?;
+            let text = resp.text().await?;
+            println!("{}", text);
+            Ok(())
+        }
+        EventCommand::Sub { subject, url } => {
+            let client = reqwest::Client::new();
+            let resp = client
+                .get(format!("{}/api/v1/events/subscribe", url))
+                .query(&[("subject", &subject)])
+                .send()
+                .await?;
+
+            let mut stream = resp.bytes_stream();
+            use futures::StreamExt;
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk?;
+                let text = String::from_utf8_lossy(&chunk);
+                for line in text.lines() {
+                    if let Some(data) = line.strip_prefix("data: ") {
+                        println!("{}", data);
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+async fn run_agent(command: AgentCommand) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        AgentCommand::List { url } => {
+            let client = reqwest::Client::new();
+            let resp = client.get(format!("{}/api/v1/agents", url)).send().await?;
+            let text = resp.text().await?;
+            println!("{}", text);
+            Ok(())
+        }
+        AgentCommand::Register {
+            name,
+            version,
+            capabilities,
+            url,
+        } => {
+            let client = reqwest::Client::new();
+            let caps: Vec<String> = if capabilities.is_empty() {
+                Vec::new()
+            } else {
+                capabilities
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect()
+            };
+            let body = serde_json::json!({
+                "name": name,
+                "version": version,
+                "capabilities": caps,
+                "last_seen": chrono::Utc::now().to_rfc3339(),
+                "metadata": {},
+            });
+            let resp = client
+                .post(format!("{}/api/v1/agents", url))
+                .json(&body)
+                .send()
+                .await?;
+            let text = resp.text().await?;
+            println!("{}", text);
+            Ok(())
+        }
+        AgentCommand::Info { name, url } => {
+            let client = reqwest::Client::new();
+            let resp = client
+                .get(format!("{}/api/v1/agents/{}", url, name))
+                .send()
+                .await?;
+            let text = resp.text().await?;
+            println!("{}", text);
             Ok(())
         }
     }

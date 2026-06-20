@@ -1,6 +1,6 @@
 [package]
 name = "agent-spine"
-version = "0.11.0"
+version = "0.12.0"
 edition = "2024"
 license = "Apache-2.0"
 description = "A local-first, stateful workflow engine for supervising AI coding agents."
@@ -30,6 +30,12 @@ tonic-web = "0.12"
 axum = "0.7"
 sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "tls-rustls", "json"], optional = true }
 redis = { version = "0.28", features = ["tokio-comp", "connection-manager"], optional = true }
+async-nats = { version = "0.39", optional = true }
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
+async-stream = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 opentelemetry = "0.32.0"
 opentelemetry_sdk = { version = "0.32.1", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic"] }
@@ -37,6 +43,7 @@ tracing-opentelemetry = "0.33.0"
 
 [features]
 default = []
+nats = ["dep:async-nats"]
 postgres = ["dep:sqlx"]
 redis = ["dep:redis"]
 
