@@ -17,8 +17,8 @@ on:
         required: false
 
 concurrency:
-  group: stage-release-publish-${{ github.ref }}
-  cancel-in-progress: false
+  group: ${{ github.repository }}-pipeline
+  cancel-in-progress: ${{ github.workflow != 'Release' && github.workflow != 'Stage release publish' }}
 
 permissions:
   contents: write
