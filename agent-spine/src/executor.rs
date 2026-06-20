@@ -256,8 +256,15 @@ impl<S: WorkflowState> Executor<S> {
     ) {
         if let Some(brain) = self.brain.as_mut() {
             brain.store_trajectory_full(
-                exec_id, node_id, outcome, task_kind, None,
-                model_used, None, payload_snapshot, error_message,
+                exec_id,
+                node_id,
+                outcome,
+                task_kind,
+                None,
+                model_used,
+                None,
+                payload_snapshot,
+                error_message,
             );
         }
     }
@@ -322,7 +329,15 @@ impl<S: WorkflowState> Executor<S> {
                     .transition(final_transition, cancelled_payload)
                     .map_err(|_| ExecutorError::InvalidTransition)?;
                 self.prepare_and_append_snapshot(&self.state_store, current_snapshot)?;
-                self.log_trajectory(&exec_id_str, "cancelled", "cancelled", None, None, None, None);
+                self.log_trajectory(
+                    &exec_id_str,
+                    "cancelled",
+                    "cancelled",
+                    None,
+                    None,
+                    None,
+                    None,
+                );
                 break;
             }
 
@@ -360,6 +375,7 @@ impl<S: WorkflowState> Executor<S> {
                     retry_policy: node.retry_policy(),
                     description: node.description().map(String::from),
                     escalation_model: node.escalation_model().map(String::from),
+                    sandbox_config: node.sandbox_config().cloned(),
                     payload: node_payload,
                 });
             }
@@ -383,8 +399,7 @@ impl<S: WorkflowState> Executor<S> {
                             | NodeKind::Router
                             | NodeKind::Hydrate
                             | NodeKind::Debate
-                            | NodeKind::Vote
-                            | NodeKind::Sandbox => {
+                            | NodeKind::Vote => {
                                 let mut retries = 0;
                                 let max_retries = task.retry_policy.max_attempts;
                                 let base_backoff = task.retry_policy.backoff_ms;
@@ -486,6 +501,63 @@ impl<S: WorkflowState> Executor<S> {
                                             ))
                                             .await;
                                         }
+                                    }
+                                }
+                            }
+                            NodeKind::Sandbox => {
+                                let cmd = task
+                                    .payload
+                                    .get("_sandbox_command")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or("echo 'no command provided'");
+                                let image = task
+                                    .sandbox_config
+                                    .as_ref()
+                                    .map(|c| c.image.clone())
+                                    .unwrap_or_else(|| "ubuntu:24.04".into());
+                                let timeout_secs = task
+                                    .sandbox_config
+                                    .as_ref()
+                                    .map(|c| c.timeout_secs)
+                                    .unwrap_or(60);
+                                let workdir = std::env::current_dir().ok();
+                                match crate::sandbox::run_sandbox(
+                                    cmd,
+                                    &image,
+                                    std::time::Duration::from_secs(timeout_secs),
+                                    workdir.as_deref(),
+                                )
+                                .await
+                                {
+                                    Ok(result) => {
+                                        let mut p = task.payload.clone();
+                                        if let Some(obj) = p.as_object_mut() {
+                                            obj.insert(
+                                                "_sandbox_stdout".into(),
+                                                Value::String(result.stdout),
+                                            );
+                                            obj.insert(
+                                                "_sandbox_stderr".into(),
+                                                Value::String(result.stderr),
+                                            );
+                                            obj.insert(
+                                                "_sandbox_exit_code".into(),
+                                                Value::Number(
+                                                    serde_json::Number::from(result.exit_code),
+                                                ),
+                                            );
+                                        }
+                                        p
+                                    }
+                                    Err(e) => {
+                                        let mut p = task.payload.clone();
+                                        if let Some(obj) = p.as_object_mut() {
+                                            obj.insert(
+                                                "_sandbox_error".into(),
+                                                Value::String(e),
+                                            );
+                                        }
+                                        p
                                     }
                                 }
                             }
@@ -659,6 +731,7 @@ struct NodeTask {
     retry_policy: crate::workflow::RetryPolicy,
     description: Option<String>,
     escalation_model: Option<String>,
+    sandbox_config: Option<crate::workflow::SandboxConfig>,
     payload: Value,
 }
 

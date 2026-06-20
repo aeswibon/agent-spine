@@ -13,6 +13,7 @@ pub mod idempotency;
 pub mod mcp_bridge;
 pub mod meta_router;
 pub mod router;
+pub mod sandbox;
 pub mod state;
 pub mod supervisor;
 pub mod wake_on_call;
