@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-06-20
+
+### Added
+
+- **Predictive token budget gate** — executor calls agent-heart `POST /budget/check` before delegating LLM nodes (`AUTONOMIC_HEART_URL`, `AUTONOMIC_BUDGET_GATE=0` to disable)
+
 ## [0.15.1] - 2026-06-20
 
 ### Changed

@@ -9,6 +9,7 @@ use tracing::Instrument;
 use crate::cancellation::CancelToken;
 
 use crate::brain_router::BrainRouter;
+use crate::budget_gate::{self, BudgetGate};
 use crate::condition;
 use crate::router::RouterAction;
 use crate::state::StateError;
@@ -137,6 +138,7 @@ pub struct Executor<S: WorkflowState> {
     state_store: Arc<Mutex<S>>,
     supervisor: Supervisor,
     brain: Option<BrainRouter>,
+    budget_gate: BudgetGate,
     snapshot_config: SnapshotConfig,
     cancel_token: CancelToken,
 }
@@ -153,9 +155,17 @@ impl<S: WorkflowState> Executor<S> {
             state_store,
             supervisor,
             brain: None,
+            budget_gate: BudgetGate::from_env(),
             snapshot_config: SnapshotConfig::default(),
             cancel_token: CancelToken::new(),
         }
+    }
+
+    /// Attach a budget gate (defaults to `AUTONOMIC_HEART_URL` / `AUTONOMIC_BUDGET_GATE`).
+    #[must_use]
+    pub fn with_budget_gate(mut self, gate: BudgetGate) -> Self {
+        self.budget_gate = gate;
+        self
     }
 
     /// Attach a cancel token for graceful shutdown.
@@ -378,6 +388,21 @@ impl<S: WorkflowState> Executor<S> {
                     sandbox_config: node.sandbox_config().cloned(),
                     payload: node_payload,
                 });
+            }
+
+            // ── Phase 1b: Predictive token budget gate (agent-heart) ──
+            for task in &node_tasks {
+                if budget_gate::requires_budget_check(&task.kind) {
+                    let tokens = budget_gate::estimated_tokens_from_payload(&task.payload);
+                    let kind = task.kind.to_string();
+                    self.budget_gate.check_node(&kind, tokens).await.map_err(
+                        |e| match e {
+                            budget_gate::BudgetGateError::Frozen { reason } => {
+                                ExecutorError::BudgetFrozen { reason }
+                            }
+                        },
+                    )?;
+                }
             }
 
             // ── Phase 2: Execute all nodes in parallel ──
@@ -798,4 +823,6 @@ pub enum ExecutorError {
     Cancelled,
     #[error("payload too large: {size} bytes (max {max})")]
     PayloadTooLarge { size: usize, max: usize },
+    #[error("token budget frozen: {reason}")]
+    BudgetFrozen { reason: String },
 }

@@ -9,6 +9,7 @@ pub mod api;
 pub mod async_sandbox;
 pub mod autonomic_api;
 pub mod brain_router;
+pub mod budget_gate;
 pub mod cancellation;
 pub(crate) mod condition;
 pub mod event;
