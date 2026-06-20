@@ -1,19 +1,18 @@
 # agent-spine
 
-**Deterministic workflow engine for AI coding agents — declarative YAML pipelines with immutable state, parallel branches, approval gates, and built-in retries.**
+**Deterministic workflow engine for AI agents — YAML pipelines, state snapshots, and an HTTP event bus.**
 
-agent-spine is a local-first workflow supervisor that runs YAML pipelines for AI coding agents. It manages graph execution, state snapshots, fan-out/fan-in parallelism, human-in-the-loop gates, and retry policies — all in one binary, zero external dependencies.
+Part of the **[Autonomic AI](https://github.com/autonomic-ai-dev/agent-body)** ecosystem. Runs standalone or as the orchestration hub that peripheral organs register with on port **3100**.
 
-Rust is the engine; Claude Code / Cursor / Codex are the workers.
+| Standalone | Integrated |
+|------------|------------|
+| `agent-spine run workflow.yaml` | Budget gate via agent-heart |
+| `agent-spine serve` (event bus) | Organs publish `*.executed`, `*.indexed`, … |
+| Local state stores | `[spine]` in `~/.autonomic/config.toml` |
 
 ```bash
-# One command — auto-detects your platform, downloads, and installs
-curl -fsSL https://raw.githubusercontent.com/aeswibon/agent-spine/main/install.sh | bash
-
-# One-time setup — creates a 10-node dev-pipeline workflow
+curl -fsSL https://raw.githubusercontent.com/autonomic-ai-dev/agent-spine/master/scripts/install.sh | bash
 agent-spine init
-
-# Run it — auto-resolves all nodes without external hooks
 agent-spine run dev-pipeline.yaml
 ```
 
@@ -103,7 +102,7 @@ agent-spine run workflow.yaml
 ### Binary install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/aeswibon/agent-spine/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/autonomic-ai-dev/agent-spine/master/scripts/install.sh | bash
 ```
 
 Auto-detects your OS/arch, downloads the correct binary from the latest release, and installs to `/usr/local/bin`. Supports **macOS** (x86_64, aarch64), **Linux** (x86_64, aarch64), and **Windows** (x86_64, via Git BASH/MSYS2).
