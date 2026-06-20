@@ -17,8 +17,10 @@ pub async fn run_sandbox_via_jetstream(
 ) -> Result<SandboxResult, String> {
     let client = match tokio::time::timeout(
         std::time::Duration::from_secs(3),
-        async_nats::connect(nats_url)
-    ).await {
+        async_nats::connect(nats_url),
+    )
+    .await
+    {
         Ok(Ok(c)) => c,
         _ => return Err("NATS connect failed or timed out".to_string()),
     };

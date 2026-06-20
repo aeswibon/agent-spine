@@ -96,8 +96,10 @@ pub fn spawn_state_bridge(supervisor: Supervisor, nats_url: String) {
     tokio::spawn(async move {
         let Ok(Ok(client)) = tokio::time::timeout(
             std::time::Duration::from_secs(3),
-            async_nats::connect(&nats_url)
-        ).await else {
+            async_nats::connect(&nats_url),
+        )
+        .await
+        else {
             warn!("jetstream bridge: failed to connect to {nats_url}");
             return;
         };

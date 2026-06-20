@@ -343,14 +343,12 @@ pub struct JetStreamEventBus {
 #[cfg(feature = "nats")]
 impl JetStreamEventBus {
     pub async fn connect(url: &str) -> Result<Self, EventBusError> {
-        let client = tokio::time::timeout(
-            std::time::Duration::from_secs(3),
-            async_nats::connect(url)
-        )
-        .await
-        .map_err(|_| EventBusError::Nats("timeout connecting to NATS".into()))?
-        .map_err(|e| EventBusError::Nats(e.to_string()))?;
-        
+        let client =
+            tokio::time::timeout(std::time::Duration::from_secs(3), async_nats::connect(url))
+                .await
+                .map_err(|_| EventBusError::Nats("timeout connecting to NATS".into()))?
+                .map_err(|e| EventBusError::Nats(e.to_string()))?;
+
         let js = crate::jetstream::ensure_autonomic_stream(&client)
             .await
             .map_err(EventBusError::Nats)?;
@@ -421,13 +419,11 @@ pub struct NatsEventBus {
 #[cfg(feature = "nats")]
 impl NatsEventBus {
     pub async fn connect(url: &str) -> Result<Self, EventBusError> {
-        let client = tokio::time::timeout(
-            std::time::Duration::from_secs(3),
-            async_nats::connect(url)
-        )
-        .await
-        .map_err(|_| EventBusError::Nats("timeout connecting to NATS".into()))?
-        .map_err(|e| EventBusError::Nats(e.to_string()))?;
+        let client =
+            tokio::time::timeout(std::time::Duration::from_secs(3), async_nats::connect(url))
+                .await
+                .map_err(|_| EventBusError::Nats("timeout connecting to NATS".into()))?
+                .map_err(|e| EventBusError::Nats(e.to_string()))?;
         Ok(Self { client })
     }
 }
