@@ -6,8 +6,7 @@ on:
 
 concurrency:
   group: ${{ github.repository }}-pipeline
-  cancel-in-progress: ${{ github.workflow != 'Release' && github.workflow != 'Stage release publish' }}
-
+  cancel-in-progress: ${{ github.workflow != 'Release' }}
 permissions:
   contents: write
   actions: write

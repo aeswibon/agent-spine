@@ -9,8 +9,7 @@ on:
 
 concurrency:
   group: ${{ github.repository }}-pipeline
-  cancel-in-progress: ${{ github.workflow != 'Release' && github.workflow != 'Stage release publish' }}
-
+  cancel-in-progress: ${{ github.workflow != 'Release' }}
 env:
   CARGO_TERM_COLOR: always
 

@@ -10,10 +10,6 @@ on:
         required: false
         default: 14
 
-concurrency:
-  group: ${{ github.repository }}-pipeline
-  cancel-in-progress: ${{ github.workflow != 'Release' && github.workflow != 'Stage release publish' }}
-
 permissions:
   contents: read
 
