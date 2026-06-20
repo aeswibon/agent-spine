@@ -13,6 +13,8 @@ pub mod event;
 pub mod executor;
 pub mod global_workspace;
 pub mod idempotency;
+#[cfg(feature = "nats")]
+pub mod jetstream_bridge;
 pub mod mcp_bridge;
 pub mod meta_router;
 pub mod router;

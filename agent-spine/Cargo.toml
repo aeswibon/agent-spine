@@ -42,7 +42,7 @@ opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic"] }
 tracing-opentelemetry = "0.33.0"
 
 [features]
-default = []
+default = ["nats"]
 nats = ["dep:async-nats"]
 postgres = ["dep:sqlx"]
 redis = ["dep:redis"]

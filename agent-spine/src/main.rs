@@ -101,6 +101,9 @@ enum Command {
         /// Dashboard HTTP port (defaults to port + 1)
         #[arg(long, default_value_t = 3001)]
         dashboard_port: u16,
+        /// NATS URL for JetStream event sourcing (or set AUTONOMIC_NATS_URL)
+        #[arg(long)]
+        nats_url: Option<String>,
     },
 }
 
@@ -569,11 +572,22 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             db,
             port,
             dashboard_port,
+            nats_url,
         } => {
             let db = agent_spine::global_workspace::resolve_state_db(db)?;
             info!("Starting agent-spine gRPC server on port {}", port);
 
             let wf_manager = agent_spine::WorkflowManager::new(db.clone(), false);
+
+            let nats_url = nats_url.or_else(|| std::env::var("AUTONOMIC_NATS_URL").ok());
+
+            #[cfg(feature = "nats")]
+            if let Some(url) = nats_url {
+                agent_spine::jetstream_bridge::spawn_state_bridge(
+                    wf_manager.supervisor.clone(),
+                    url,
+                );
+            }
 
             let store = agent_spine::state::SqliteStateStore::new(&db)?;
             let store = std::sync::Arc::new(std::sync::Mutex::new(store));
