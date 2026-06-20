@@ -39,8 +39,8 @@ impl BudgetGate {
         let enabled = std::env::var("AUTONOMIC_BUDGET_GATE")
             .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
             .unwrap_or(true);
-        let heart_url = std::env::var("AUTONOMIC_HEART_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:3101".into());
+        let heart_url =
+            std::env::var("AUTONOMIC_HEART_URL").unwrap_or_else(|_| "http://127.0.0.1:3101".into());
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
             .build()
@@ -86,10 +86,7 @@ impl BudgetGate {
         };
 
         if !resp.status().is_success() {
-            tracing::warn!(
-                "budget gate HTTP {}; allowing delegation",
-                resp.status()
-            );
+            tracing::warn!("budget gate HTTP {}; allowing delegation", resp.status());
             return Ok(());
         }
 

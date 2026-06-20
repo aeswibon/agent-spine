@@ -395,13 +395,14 @@ impl<S: WorkflowState> Executor<S> {
                 if budget_gate::requires_budget_check(&task.kind) {
                     let tokens = budget_gate::estimated_tokens_from_payload(&task.payload);
                     let kind = task.kind.to_string();
-                    self.budget_gate.check_node(&kind, tokens).await.map_err(
-                        |e| match e {
+                    self.budget_gate
+                        .check_node(&kind, tokens)
+                        .await
+                        .map_err(|e| match e {
                             budget_gate::BudgetGateError::Frozen { reason } => {
                                 ExecutorError::BudgetFrozen { reason }
                             }
-                        },
-                    )?;
+                        })?;
                 }
             }
 
