@@ -1,5 +1,7 @@
 //! Pre-delegation token budget gate via agent-heart `/budget/check`.
 
+use std::sync::{Arc, Mutex};
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -10,6 +12,8 @@ pub struct BudgetGate {
     heart_url: String,
     enabled: bool,
     client: reqwest::Client,
+    /// Track freeze offenses per phase — first offense is warning-only.
+    freeze_offenses: Arc<Mutex<std::collections::HashMap<String, u32>>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -49,6 +53,7 @@ impl BudgetGate {
             heart_url: heart_url.trim_end_matches('/').to_string(),
             enabled,
             client,
+            freeze_offenses: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -58,6 +63,7 @@ impl BudgetGate {
             heart_url: String::new(),
             enabled: false,
             client: reqwest::Client::new(),
+            freeze_offenses: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -116,6 +122,19 @@ impl BudgetGate {
         };
 
         if !decision.allowed || decision.frozen {
+            // First freeze per phase is a warning — subsequent ones fail hard
+            let phase = phase_for_kind(node_kind).to_string();
+            let mut offenses = self.freeze_offenses.lock().unwrap();
+            let count = offenses.entry(phase.clone()).or_insert(0);
+            *count += 1;
+            if *count <= 1 {
+                tracing::warn!(
+                    phase = %phase,
+                    "budget gate first offense (warning only): {}",
+                    decision.reason
+                );
+                return Ok(());
+            }
             return Err(BudgetGateError::Frozen {
                 reason: decision.reason,
             });
