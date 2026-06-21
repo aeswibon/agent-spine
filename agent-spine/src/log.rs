@@ -23,7 +23,7 @@ pub fn list_logs() -> Result<Vec<String>> {
     for entry in fs::read_dir(&dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().map_or(false, |e| e == "log") {
+        if path.extension().is_some_and(|e| e == "log") {
             if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                 names.push(stem.to_string());
             }
