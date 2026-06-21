@@ -54,9 +54,9 @@ impl Clone for WorkflowManager {
 }
 
 impl WorkflowManager {
-    /// Create a new workflow manager with default concurrency (unlimited).
+    /// Create a new workflow manager with default concurrency (1000 max).
     pub fn new(db_path: PathBuf, brain_enabled: bool) -> Self {
-        Self::with_concurrency_limit(db_path, brain_enabled, usize::MAX)
+        Self::with_concurrency_limit(db_path, brain_enabled, 1000)
     }
 
     /// Create a new workflow manager with a max concurrency limit.
