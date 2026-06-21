@@ -27,6 +27,7 @@ pub mod router;
 pub mod sandbox;
 pub mod state;
 pub mod supervisor;
+pub mod update;
 pub mod wake_on_call;
 pub mod workflow;
 pub mod workflow_manager;

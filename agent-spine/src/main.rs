@@ -101,6 +101,12 @@ enum Command {
         #[command(subcommand)]
         action: AgentCommand,
     },
+    /// Check for and apply updates
+    Update {
+        /// Apply update even if already at latest version
+        #[arg(short, long)]
+        force: bool,
+    },
     /// Serve the Live Dashboard API.
     Serve {
         /// Path to SQLite database
@@ -607,6 +613,10 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         Command::Brain { action } => run_brain(action).await,
         Command::Event { action } => run_event(action).await,
         Command::Agent { action } => run_agent(action).await,
+        Command::Update { force } => {
+            agent_spine::update::run_update(force)?;
+            Ok(())
+        }
         Command::Serve {
             db,
             port,

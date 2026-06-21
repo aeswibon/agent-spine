@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "agent-spine"
-version = "0.16.4"
+version = "0.16.5"
 dependencies = [
  "agent-body-core",
  "anyhow",
