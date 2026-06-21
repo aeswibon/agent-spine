@@ -36,6 +36,17 @@ enum Command {
     Status,
     /// Diagnose common setup issues.
     Doctor,
+    /// Display daemon logs
+    Log {
+        /// Daemon name (e.g. spine, nerves, heart) or "all"
+        name: Option<String>,
+        /// Follow log output (tail -f)
+        #[arg(short, long)]
+        follow: bool,
+        /// List available log files
+        #[arg(short, long)]
+        list: bool,
+    },
     /// Parse and validate a YAML workflow definition.
     Validate {
         /// Path to a workflow definition file.
@@ -426,6 +437,31 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                 println!("Some checks failed. Run `agent-spine init` for setup help.");
             }
 
+            Ok(())
+        }
+        Command::Log { name, follow, list } => {
+            if list {
+                let logs = agent_spine::log::list_logs()?;
+                if logs.is_empty() {
+                    println!("No log files found.");
+                } else {
+                    println!("Available logs:");
+                    for log in &logs {
+                        println!("  {log}");
+                    }
+                }
+                return Ok(());
+            }
+            let name = name.ok_or_else(|| {
+                Box::<dyn std::error::Error>::from(
+                    "usage: agent-spine log <name> [--follow]  (or --list to see available logs)",
+                )
+            })?;
+            if follow {
+                agent_spine::log::follow_log(&name)?;
+            } else {
+                agent_spine::log::print_log(&name)?;
+            }
             Ok(())
         }
         Command::Validate { workflow } => {
