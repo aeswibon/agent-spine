@@ -43,11 +43,7 @@ fn registry_workflow_yaml(alias: &str) -> Option<(String, String)> {
 fn brain_home() -> PathBuf {
     std::env::var("AGENT_BRAIN_HOME")
         .map(PathBuf::from)
-        .or_else(|_| {
-            dirs::home_dir()
-                .map(|h| h.join(".agent_brain"))
-                .ok_or(())
-        })
+        .or_else(|_| dirs::home_dir().map(|h| h.join(".agent_brain")).ok_or(()))
         .unwrap_or_else(|_| PathBuf::from(".agent_brain"))
 }
 

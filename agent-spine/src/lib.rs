@@ -23,6 +23,7 @@ pub mod jetstream_bridge;
 pub mod log;
 pub mod mcp_bridge;
 pub mod meta_router;
+pub mod registry_workflow;
 pub mod router;
 pub mod sandbox;
 pub mod state;
@@ -31,7 +32,6 @@ pub mod update;
 pub mod wake_on_call;
 pub mod workflow;
 pub mod workflow_manager;
-pub mod registry_workflow;
 pub mod workflows;
 
 mod execution;
