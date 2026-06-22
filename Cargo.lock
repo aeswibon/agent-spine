@@ -4,8 +4,8 @@ version = 4
 
 [[package]]
 name = "agent-body-core"
-version = "0.3.3"
-source = "git+https://github.com/autonomic-ai-dev/agent-body#1b8ad85b283135b0b0543ba87c7501bfe7e1a7ba"
+version = "0.3.4"
+source = "git+https://github.com/autonomic-ai-dev/agent-body?branch=feat%2Finstall-update-ux#f5f8b01f833fabc4575b16c667c1d237500081ef"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -20,7 +20,7 @@ dependencies = [
 
 [[package]]
 name = "agent-spine"
-version = "0.16.8"
+version = "0.16.9"
 dependencies = [
  "agent-body-core",
  "anyhow",
