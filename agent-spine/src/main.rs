@@ -1,10 +1,29 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+use agent_body_core::cli::apply_progress_env;
+use agent_body_core::ui::ProgressMode;
 use agent_spine::WorkflowDefinition;
 use agent_spine::mcp_bridge::{McpBridge, RouteLimits};
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ProgressArg {
+    Auto,
+    Plain,
+    Quiet,
+}
+
+impl From<ProgressArg> for ProgressMode {
+    fn from(value: ProgressArg) -> Self {
+        match value {
+            ProgressArg::Auto => ProgressMode::Auto,
+            ProgressArg::Plain => ProgressMode::Plain,
+            ProgressArg::Quiet => ProgressMode::Quiet,
+        }
+    }
+}
 
 #[derive(Debug, Parser)]
 #[command(
@@ -13,6 +32,10 @@ use agent_spine::mcp_bridge::{McpBridge, RouteLimits};
     about = "Stateful workflow supervision for AI coding agents"
 )]
 struct Cli {
+    /// Progress output style: auto, plain, or quiet
+    #[arg(long, value_enum, global = true, default_value = "auto")]
+    progress: ProgressArg,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -240,7 +263,10 @@ async fn main() {
             .ok();
     }
 
-    if let Err(error) = run(Cli::parse().command).await {
+    let cli = Cli::parse();
+    apply_progress_env(cli.progress.into());
+
+    if let Err(error) = run(cli.command).await {
         eprintln!("Error: {error}");
         std::process::exit(1);
     }
@@ -248,216 +274,13 @@ async fn main() {
 
 async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
     match command {
-        Command::Init { force, dir, with } => {
-            use std::io::Write;
-
-            let config_dir = dir.unwrap_or_else(|| {
-                let home = std::env::var("HOME").expect("HOME must be set");
-                PathBuf::from(home).join(".config/agent-spine")
-            });
-
-            println!("agent-spine v{} init", env!("CARGO_PKG_VERSION"));
-            println!("  config:  {}", config_dir.display());
-            println!();
-
-            // Handle --with list (no-op, just display available workflows)
-            if with.as_deref() == Some("list") {
-                println!("Available built-in workflows:");
-                for w in agent_spine::workflows::ALL {
-                    println!("  {:<25} {} — {}", w.name, w.label, w.description);
-                }
-                let registry_entries = agent_spine::registry_workflow::list_registry_aliases();
-                if !registry_entries.is_empty() {
-                    println!();
-                    println!("Autonomic Registry workflows (from agent-brain cache):");
-                    for (alias, desc) in registry_entries {
-                        println!("  @{:<24} {}", alias, desc);
-                    }
-                    println!();
-                    println!("  Run: agent-brain registry sync --local  (if cache is empty)");
-                }
-                return Ok(());
-            }
-
-            // Prerequisites
-            if !force {
-                let mut warnings = Vec::new();
-                if std::process::Command::new("protoc")
-                    .arg("--version")
-                    .output()
-                    .is_err()
-                {
-                    warnings
-                        .push("protoc — gRPC codegen (https://grpc.io/docs/protoc-installation/)");
-                }
-                if std::process::Command::new("bun")
-                    .arg("--version")
-                    .output()
-                    .is_err()
-                {
-                    warnings.push("bun — dashboard dev server (https://bun.sh)");
-                }
-                if std::process::Command::new("agent-brain")
-                    .arg("--version")
-                    .output()
-                    .is_err()
-                    && std::env::var("BRAIN_PATH").is_err()
-                {
-                    warnings.push("agent-brain — MCP routing & memory (install from GitHub releases or set BRAIN_PATH)");
-                }
-                if !warnings.is_empty() {
-                    println!("Optional dependencies not found:");
-                    for w in &warnings {
-                        println!("  ⚠  {w}");
-                    }
-                    println!();
-                } else {
-                    println!("✓ All prerequisites satisfied");
-                    println!();
-                }
-            }
-
-            // Create config directory
-            std::fs::create_dir_all(&config_dir)
-                .map_err(|e| format!("failed to create config dir: {e}"))?;
-            let workflows_dir = config_dir.join("workflows");
-            std::fs::create_dir_all(&workflows_dir)
-                .map_err(|e| format!("failed to create workflows dir: {e}"))?;
-
-            // Write default config
-            let config_path = config_dir.join("config.toml");
-            if !config_path.exists() {
-                let mut f = std::fs::File::create(&config_path)
-                    .map_err(|e| format!("failed to write config: {e}"))?;
-                write!(f, "{}", CONFIG_TEMPLATE)?;
-                println!("✓ Created config: {}", config_path.display());
-            } else {
-                println!("  Config exists: {}", config_path.display());
-            }
-
-            // Determine which workflow to write
-            let (workflow_name, workflow_yaml) = if let Some(ref kind) = with {
-                let (name, yaml) = agent_spine::registry_workflow::resolve_workflow_yaml(kind)
-                    .ok_or_else(|| {
-                        format!(
-                            "Unknown workflow '{kind}'. Use `agent-spine init --with list` to see built-in and @registry workflows."
-                        )
-                    })?;
-                (name, yaml)
-            } else {
-                ("example".to_string(), EXAMPLE_WORKFLOW.to_string())
-            };
-
-            let workflow_filename = format!("{workflow_name}.yaml");
-            let workflow_path = workflows_dir.join(&workflow_filename);
-            if !workflow_path.exists() {
-                let mut f = std::fs::File::create(&workflow_path)
-                    .map_err(|e| format!("failed to write workflow: {e}"))?;
-                write!(f, "{workflow_yaml}")?;
-                println!("✓ Created workflow: {}", workflow_path.display());
-            } else {
-                println!("  Workflow exists: {}", workflow_path.display());
-            }
-
-            println!();
-            println!("Next steps:");
-            println!("  Validate your workflow:");
-            println!("    agent-spine validate {}", workflow_path.display());
-            println!("  List available built-in workflows:");
-            println!("    agent-spine init --with list");
-            println!("  Start the dashboard server:");
-            println!("    agent-spine serve --db state.db --port 3000");
-            println!("  Check agent-brain connectivity:");
-            println!("    agent-spine brain health");
-            println!("  See all commands:");
-            println!("    agent-spine --help");
-
-            Ok(())
-        }
+        Command::Init { force, dir, with } => agent_spine::setup::run_init(force, dir, with),
         Command::Status => {
             info!("agent-spine supervisor initialized");
             println!("agent-spine: skeleton ready; workflow validation is available");
             Ok(())
         }
-        Command::Doctor => {
-            use std::process::Command;
-
-            println!("agent-spine doctor — diagnostics");
-            println!();
-
-            let mut all_ok = true;
-
-            // Rust toolchain
-            if let Ok(output) = Command::new("rustc").arg("--version").output() {
-                let version = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-                println!("✓ rustc: {version}");
-            } else {
-                println!("✗ rustc: not found");
-                all_ok = false;
-            }
-
-            // protoc
-            if let Ok(output) = Command::new("protoc").arg("--version").output() {
-                let version = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-                println!("✓ protoc: {version}");
-            } else {
-                println!("⚠ protoc: not found (only needed for source builds)");
-            }
-
-            // bun
-            if let Ok(output) = Command::new("bun").arg("--version").output() {
-                let version = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-                println!("✓ bun: {version}");
-            } else {
-                println!("⚠ bun: not found (only needed for dashboard dev)");
-            }
-
-            // agent-brain
-            if let Ok(output) = Command::new("agent-brain").arg("--version").output() {
-                let version = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-                println!("✓ agent-brain: {version}");
-            } else {
-                println!("⚠ agent-brain: not found (optional — MCP routing & memory)");
-            }
-
-            // Binary version
-            println!();
-            println!("agent-spine v{}", env!("CARGO_PKG_VERSION"));
-
-            // Config directory
-            let home = std::env::var("HOME").unwrap_or_default();
-            let config_dir = std::path::PathBuf::from(&home).join(".config/agent-spine");
-            if config_dir.exists() {
-                println!("✓ config dir: {}", config_dir.display());
-            } else {
-                println!(
-                    "  config dir: {} (not yet created — run `agent-spine init`)",
-                    config_dir.display()
-                );
-            }
-
-            // Example workflow validation
-            let example = config_dir.join("workflows/example.yaml");
-            if example.exists() {
-                match WorkflowDefinition::from_path(&example) {
-                    Ok(def) => match def.validate() {
-                        Ok(_) => println!("✓ example workflow: valid"),
-                        Err(e) => println!("⚠ example workflow: {e}"),
-                    },
-                    Err(_) => println!("⚠ example workflow: could not parse"),
-                }
-            }
-
-            if all_ok {
-                println!();
-                println!("All checks passed.");
-            } else {
-                println!();
-                println!("Some checks failed. Run `agent-spine init` for setup help.");
-            }
-
-            Ok(())
-        }
+        Command::Doctor => agent_spine::setup::run_doctor(),
         Command::Log { name, follow, list } => {
             if list {
                 let logs = agent_spine::log::list_logs()?;
@@ -934,87 +757,3 @@ async fn run_agent(command: AgentCommand) -> Result<(), Box<dyn std::error::Erro
         }
     }
 }
-
-const CONFIG_TEMPLATE: &str = r##"# agent-spine configuration
-# See https://github.com/aeswibon/agent-spine for documentation.
-
-[server]
-port = 3000
-db = "state.db"
-
-[brain]
-# Path to agent-brain binary (optional — resolves from PATH or BRAIN_PATH)
-# path = "/usr/local/bin/agent-brain"
-
-[routing]
-max_failures = 3
-"##;
-
-const EXAMPLE_WORKFLOW: &str = r##"name: dev-pipeline
-version: 1
-start: plan
-
-nodes:
-  - name: plan
-    kind: Router
-    retry:
-      max_attempts: 2
-      backoff_ms: 500
-
-  - name: fork
-    kind: Fork
-
-  - name: implement
-    kind: Agent
-    retry:
-      max_attempts: 2
-      backoff_ms: 1000
-
-  - name: test
-    kind: Agent
-    retry:
-      max_attempts: 2
-      backoff_ms: 1000
-
-  - name: lint
-    kind: Verify
-
-  - name: security-scan
-    kind: Agent
-
-  - name: join
-    kind: Join
-
-  - name: review-gate
-    kind: ApprovalGate
-
-  - name: deploy
-    kind: Agent
-
-  - name: verify-deploy
-    kind: Verify
-
-edges:
-  - from: plan
-    to: fork
-  - from: fork
-    to: implement
-  - from: fork
-    to: test
-  - from: implement
-    to: lint
-  - from: implement
-    to: security-scan
-  - from: lint
-    to: join
-  - from: security-scan
-    to: join
-  - from: test
-    to: join
-  - from: join
-    to: review-gate
-  - from: review-gate
-    to: deploy
-  - from: deploy
-    to: verify-deploy
-"##;
