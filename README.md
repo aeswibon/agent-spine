@@ -104,7 +104,8 @@ In standalone mode, agent-spine is a local workflow runner. In integrated mode, 
 
 | Command | Description |
 |---------|-------------|
-| `agent-spine init` | Generate config, check prerequisites, create example `dev-pipeline.yaml` (10 nodes) |
+| `agent-spine init` | Generate config, check prerequisites, create example workflow (ProgressTree with `--progress`) |
+| `agent-spine doctor` | Diagnose rustc, protoc, bun, agent-brain, config, and workflow setup |
 | `agent-spine run <file>` | Execute a workflow YAML with built-in LocalAgent |
 | `agent-spine validate <file>` | Validate a workflow definition against the schema |
 | `agent-spine serve` | Start gRPC + dashboard API server on port 3100 |

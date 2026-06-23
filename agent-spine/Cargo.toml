@@ -1,6 +1,6 @@
 [package]
 name = "agent-spine"
-version = "0.16.9"
+version = "0.17.0"
 edition = "2024"
 license = "Apache-2.0"
 description = "A local-first, stateful workflow engine for supervising AI coding agents."
