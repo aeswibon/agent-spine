@@ -26,6 +26,7 @@ pub mod meta_router;
 pub mod registry_workflow;
 pub mod router;
 pub mod sandbox;
+pub mod setup;
 pub mod state;
 pub mod supervisor;
 pub mod update;
