@@ -4,8 +4,8 @@ version = 4
 
 [[package]]
 name = "agent-body-core"
-version = "0.3.3"
-source = "git+https://github.com/autonomic-ai-dev/agent-body#1b8ad85b283135b0b0543ba87c7501bfe7e1a7ba"
+version = "0.3.4"
+source = "git+https://github.com/autonomic-ai-dev/agent-body#fa81acd7e919994161babbfb8e34e863676d43d1"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -20,7 +20,7 @@ dependencies = [
 
 [[package]]
 name = "agent-spine"
-version = "0.16.8"
+version = "0.16.9"
 dependencies = [
  "agent-body-core",
  "anyhow",
@@ -1168,7 +1168,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -1945,7 +1945,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -1982,7 +1982,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.52.0",
 ]
@@ -2925,7 +2925,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
