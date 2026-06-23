@@ -89,8 +89,7 @@ pub fn run_init(
         .map_err(|e| format!("read [spine]: {e}"))?
         .is_none()
     {
-        let spine_table: toml::Table =
-            toml::from_str(CONFIG_TEMPLATE).unwrap_or_default();
+        let spine_table: toml::Table = toml::from_str(CONFIG_TEMPLATE).unwrap_or_default();
         agent_body_core::write_organ_section_raw("spine", &spine_table)
             .map_err(|e| format!("write [spine]: {e}"))?;
         println!("✓ Created [spine] in {}", unified.display());
@@ -200,7 +199,12 @@ pub fn run_doctor() -> Result<(), Box<dyn std::error::Error>> {
 
     let unified = agent_body_core::config_path();
     let unified_step = progress.step("unified config");
-    if unified.is_file() && agent_body_core::read_organ_section_raw("spine").ok().flatten().is_some() {
+    if unified.is_file()
+        && agent_body_core::read_organ_section_raw("spine")
+            .ok()
+            .flatten()
+            .is_some()
+    {
         println!("✓ [spine] in {}", unified.display());
         unified_step.done();
     } else {
