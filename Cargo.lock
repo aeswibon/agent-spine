@@ -5,6 +5,7 @@ version = 4
 [[package]]
 name = "agent-body-core"
 version = "0.3.5"
+source = "git+https://github.com/autonomic-ai-dev/agent-body#479caad105080eed5515e74362f8b54905693a4c"
 dependencies = [
  "anyhow",
  "async-nats",

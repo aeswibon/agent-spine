@@ -16,8 +16,7 @@ pub fn run_init(
         PathBuf::from(home).join(".config/agent-spine")
     });
 
-    let mut progress =
-        ProgressRun::new("agent-spine init").with_total_hint(4);
+    let mut progress = ProgressRun::new("agent-spine init").with_total_hint(4);
 
     if with.as_deref() == Some("list") {
         let step = progress.step("list workflows");
@@ -49,7 +48,10 @@ pub fn run_init(
         if Command::new("bun").arg("--version").output().is_err() {
             warnings.push("bun — dashboard dev server (https://bun.sh)");
         }
-        if Command::new("agent-brain").arg("--version").output().is_err()
+        if Command::new("agent-brain")
+            .arg("--version")
+            .output()
+            .is_err()
             && std::env::var("BRAIN_PATH").is_err()
         {
             warnings.push(
@@ -59,7 +61,10 @@ pub fn run_init(
         if warnings.is_empty() {
             prereq.done();
         } else {
-            prereq.warn(format!("{} optional dependency(ies) missing", warnings.len()));
+            prereq.warn(format!(
+                "{} optional dependency(ies) missing",
+                warnings.len()
+            ));
             for w in &warnings {
                 println!("  ⚠  {w}");
             }
@@ -129,8 +134,7 @@ pub fn run_init(
 }
 
 pub fn run_doctor() -> Result<(), Box<dyn std::error::Error>> {
-    let mut progress =
-        ProgressRun::new("agent-spine health check").with_total_hint(6);
+    let mut progress = ProgressRun::new("agent-spine health check").with_total_hint(6);
     let mut all_ok = true;
 
     let toolchain = progress.step("rust toolchain");
