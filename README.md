@@ -1,8 +1,10 @@
 # agent-spine — Deterministic Workflow Engine for AI Agents
 
-**YAML-defined DAG pipelines, immutable state snapshots, parallel execution, and a gRPC event bus for multi-organ coordination.**
+**Cloud-Native role: Workflow engine** (Jobs / Argo Workflows / StatefulSets analog) — YAML DAGs, immutable snapshots, retries, and HITL gates.
 
-agent-spine is the **central nervous system** of the Autonomic AI ecosystem. It defines **what happens when** — a deterministic DAG of nodes (agent, approval, checkpoint, verify) that executes in order, records every state transition as an immutable snapshot, and supports fan-out/fan-in parallelism with human-in-the-loop approval gates.
+agent-spine defines **what happens when** — a deterministic DAG of nodes (agent, approval, checkpoint, verify) that executes in order, records every state transition as an immutable snapshot, and supports fan-out/fan-in parallelism with human-in-the-loop approval gates.
+
+> Codename: *spine organ*. Mapping: [cloud-native-platform.md](https://github.com/autonomic-ai-dev/agent-body/blob/master/docs/cloud-native-platform.md)
 
 Unlike shell scripts, CI pipelines, or Makefiles, agent-spine is purpose-built for **agent-driven workflows**: it supports retry policies with exponential backoff, confidence-based escalation, optional MCP bridging to agent-brain for per-node context routing, and a pluggable state store (InMemory, JSONL, SQLite).
 
