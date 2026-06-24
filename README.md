@@ -2,21 +2,23 @@
 
 **Cloud-Native role: Workflow engine** (Jobs / Argo Workflows / StatefulSets analog) — YAML DAGs, immutable snapshots, retries, and HITL gates.
 
-agent-spine defines **what happens when** — a deterministic DAG of nodes (agent, approval, checkpoint, verify) that executes in order, records every state transition as an immutable snapshot, and supports fan-out/fan-in parallelism with human-in-the-loop approval gates.
-
-> Codename: *spine organ*. Mapping: [cloud-native-platform.md](https://github.com/autonomic-ai-dev/agent-body/blob/master/docs/cloud-native-platform.md)
-
-Unlike shell scripts, CI pipelines, or Makefiles, agent-spine is purpose-built for **agent-driven workflows**: it supports retry policies with exponential backoff, confidence-based escalation, optional MCP bridging to agent-brain for per-node context routing, and a pluggable state store (InMemory, JSONL, SQLite).
+`agent-spine` is the orchestration engine for the Autonomic cluster. Instead of relying on probabilistic Python `while` loops to determine an agent's control flow, `agent-spine` forces agents through strict, deterministic Directed Acyclic Graphs (DAGs).
 
 ---
 
-## Core Concept
+## Under the Hood: How it Works
 
-Most AI coding workflows are improvised ad-hoc: "run lint, then tests, then build, then review." But improvisation means no audit trail, no parallelism, no retry discipline, and no way to reproduce what happened.
+### 1. Deterministic DAG Execution
+Most AI coding workflows are improvised ad-hoc inside a massive LLM prompt: "run lint, then tests, then build, then review." But improvisation means no audit trail, no parallelism, no retry discipline, and no way to reproduce what happened.
 
-agent-spine treats workflows as **first-class artifacts** — versioned YAML definitions with explicit node types, edges, and policies. Every execution produces an **append-only, immutable chain of snapshots** linked by parent references. You can replay any execution to see exactly what happened and compare branches.
+`agent-spine` solves this by treating workflows as **first-class artifacts**. It parses declarative YAML definitions into a `tokio`-driven DAG. The LLM is only used to execute micro-tasks *within* a node. The DAG dictates the control flow, not the model's mood.
 
-The key bet: **deterministic execution beats probabilistic prompting for control flow.** agent-spine follows the DAG, not the model's mood.
+### 2. Immutable State Snapshots (Time-Travel Debugging)
+Every time a node executes, `agent-spine` serializes the exact context and outputs into an **append-only, immutable snapshot**. 
+If an agent hallucinated on Step 4 and crashed your pipeline, you don't lose your work. Because state is snapshotted to a local SQLite or JSONL database, you can literally "time-travel" back to Step 3, fix the prompt, and resume the graph.
+
+### 3. Human-in-the-Loop (HITL) Gates
+If a workflow reaches a critical junction (like deploying to production), `agent-spine` pauses the `tokio` thread entirely at an `ApprovalGate` node. It waits for explicit cryptographic approval via the CLI or Dashboard before resuming the graph.
 
 ```mermaid
 flowchart TD
