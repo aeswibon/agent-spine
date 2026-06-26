@@ -1,7 +1,7 @@
+use rmcp::ServerHandler;
 use rmcp::model::{CallToolResult, Content, ErrorData as McpError, ServerInfo};
 use rmcp::serve_server;
 use rmcp::tool;
-use rmcp::ServerHandler;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -52,7 +52,9 @@ fn default_limit() -> u32 {
 
 #[tool(tool_box)]
 impl SpineMcp {
-    #[tool(description = "Submit a YAML workflow DAG definition for execution and return a workflow ID")]
+    #[tool(
+        description = "Submit a YAML workflow DAG definition for execution and return a workflow ID"
+    )]
     async fn spine_submit_workflow(
         &self,
         #[tool(aggr)] params: SubmitWorkflowParams,
@@ -97,7 +99,9 @@ impl SpineMcp {
         }
     }
 
-    #[tool(description = "List recent workflow executions with their IDs, names, statuses, and timestamps")]
+    #[tool(
+        description = "List recent workflow executions with their IDs, names, statuses, and timestamps"
+    )]
     async fn spine_list_workflows(
         &self,
         #[tool(aggr)] params: ListWorkflowsParams,
@@ -117,8 +121,7 @@ impl SpineMcp {
             })
             .collect();
 
-        let text =
-            serde_json::to_string_pretty(&recent).unwrap_or_else(|_| "[]".to_string());
+        let text = serde_json::to_string_pretty(&recent).unwrap_or_else(|_| "[]".to_string());
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 }
