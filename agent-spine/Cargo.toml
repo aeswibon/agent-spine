@@ -32,6 +32,8 @@ tonic-web = "0.12"
 axum = "0.7"
 sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "tls-rustls", "json"], optional = true }
 redis = { version = "0.28", features = ["tokio-comp", "connection-manager"], optional = true }
+rmcp = { version = "0.1", features = ["server", "transport-io"] }
+schemars = "0.8"
 async-nats = { version = "0.39", optional = true }
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }

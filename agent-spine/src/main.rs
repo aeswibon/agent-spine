@@ -130,6 +130,12 @@ enum Command {
         #[arg(short, long)]
         force: bool,
     },
+    /// Serve the MCP stdio server for workflow management.
+    McpServe {
+        /// Path to SQLite database (default: ~/.autonomic/logs/spine/state.db)
+        #[arg(short, long)]
+        db: Option<PathBuf>,
+    },
     /// Serve the Live Dashboard API.
     Serve {
         /// Path to SQLite database
@@ -451,6 +457,11 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         Command::Agent { action } => run_agent(action).await,
         Command::Update { force } => {
             agent_spine::update::run_update(force)?;
+            Ok(())
+        }
+        Command::McpServe { db } => {
+            let db = agent_spine::global_workspace::resolve_state_db(db)?;
+            agent_spine::mcp_server::SpineMcp::serve(db).await?;
             Ok(())
         }
         Command::Serve {

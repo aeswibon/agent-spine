@@ -19,6 +19,7 @@ pub struct RunningWorkflow {
     pub workflow_name: String,
     pub status: String,
     pub current_nodes: Vec<String>,
+    pub created_at: String,
 }
 
 /// Manages lifecycle of in-process workflow executions for the gRPC server.
@@ -141,6 +142,7 @@ impl WorkflowManager {
             workflow_name: name.clone(),
             status: "queued".to_owned(),
             current_nodes: Vec::new(),
+            created_at: chrono::Utc::now().to_rfc3339(),
         };
 
         {
