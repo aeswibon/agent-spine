@@ -18,6 +18,7 @@ use crate::workflow::NodeKind;
 use crate::{ExecutionId, StateSnapshot, Transition, ValidatedWorkflow, WorkflowState};
 
 use super::resilience::{self, DlqEntry, exponential_backoff_ms};
+use super::{ReadyQueue, Scheduled, SchedulerPlan};
 
 /// Configuration for snapshot payload limits and secrets redaction.
 #[derive(Clone, Debug)]
@@ -409,18 +410,53 @@ impl<S: WorkflowState> Executor<S> {
                 }
             }
 
-            // ── Phase 2: Execute all nodes in parallel ──
-            let mut join_set = tokio::task::JoinSet::new();
+            // ── Phase 2: Execute nodes by critical-path priority ──
+            //
+            // Instead of spawning all tasks at once (FIFO-ish), compute a per-node critical-path
+            // priority score and dispatch highest-CPP tasks first. This reduces starvation when
+            // fast validation nodes share the same runtime pool with slow LLM nodes.
+            let node_kinds: Vec<(String, NodeKind)> = node_tasks
+                .iter()
+                .map(|t| (t.name.clone(), t.kind.clone()))
+                .collect();
+            let plan = SchedulerPlan::compute(
+                &node_kinds,
+                self.workflow.definition().edges(),
+            );
 
+            let mut queue = ReadyQueue::new();
             for task in node_tasks {
+                let cpp = plan.cpp.get(&task.name).copied().unwrap_or(0);
+                queue.push(Scheduled {
+                    name: task.name.clone(),
+                    cpp,
+                    payload: task,
+                });
+            }
+
+            // Concurrency cap: avoid swamping the runtime with low-value tasks when one heavy
+            // critical-path node is runnable.
+            let max_in_flight = std::cmp::max(2, num_cpus::get());
+            let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(max_in_flight));
+
+            let mut join_set = tokio::task::JoinSet::new();
+            while let Some(scheduled) = queue.pop() {
+                let task = scheduled.payload;
                 let supervisor = self.supervisor.clone();
                 let workflow_name = self.workflow.definition().name().to_owned();
                 let exec_id_for_dlq = exec_id_str.clone();
-                tracing::debug!("Spawning task for node '{}'", task.name);
+                tracing::debug!(
+                    "Spawning task for node '{}' (cpp={})",
+                    task.name,
+                    scheduled.cpp
+                );
+
+                let permit = semaphore.clone().acquire_owned().await.expect("semaphore");
 
                 let span = tracing::info_span!("node_exec", node = %task.name, kind = %task.kind);
                 join_set.spawn(
                     async move {
+                        let _permit = permit;
                         let node_kind = task.kind.to_string();
                         let description = task.description.clone();
                         let next_payload = match task.kind {

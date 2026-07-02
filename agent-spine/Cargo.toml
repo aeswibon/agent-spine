@@ -1,6 +1,6 @@
 [package]
 name = "agent-spine"
-version = "0.17.2"
+version = "0.18.0"
 edition = "2024"
 license = "Apache-2.0"
 description = "A local-first, stateful workflow engine for supervising AI coding agents."
@@ -27,6 +27,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1.16", features = ["serde", "v7"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
+num_cpus = "1.16"
 tower-http = { version = "0.7.0", features = ["cors"] }
 tonic-web = "0.12"
 axum = "0.7"
