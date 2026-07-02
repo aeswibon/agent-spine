@@ -25,10 +25,7 @@ impl SchedulerPlan {
     /// Compute critical-path priority (CPP) for the subgraph induced by `nodes`.
     ///
     /// CPP(n) = weight(n) + max(CPP(s) for successors s), with sinks = weight(sink).
-    pub fn compute(
-        nodes: &[(String, NodeKind)],
-        edges: &[WorkflowEdge],
-    ) -> Self {
+    pub fn compute(nodes: &[(String, NodeKind)], edges: &[WorkflowEdge]) -> Self {
         let node_set: HashSet<&str> = nodes.iter().map(|(n, _)| n.as_str()).collect();
 
         let mut succ: HashMap<&str, Vec<&str>> = HashMap::new();
@@ -62,7 +59,12 @@ impl SchedulerPlan {
             let w = node_weight_us(kinds[n]);
             let best_succ = succ
                 .get(n)
-                .map(|ss| ss.iter().map(|s| dfs(s, kinds, succ, memo, visiting)).max().unwrap_or(0))
+                .map(|ss| {
+                    ss.iter()
+                        .map(|s| dfs(s, kinds, succ, memo, visiting))
+                        .max()
+                        .unwrap_or(0)
+                })
                 .unwrap_or(0);
             visiting.remove(n);
             let cpp = w.saturating_add(best_succ);
@@ -70,7 +72,8 @@ impl SchedulerPlan {
             cpp
         }
 
-        let kind_map: HashMap<&str, &NodeKind> = nodes.iter().map(|(n, k)| (n.as_str(), k)).collect();
+        let kind_map: HashMap<&str, &NodeKind> =
+            nodes.iter().map(|(n, k)| (n.as_str(), k)).collect();
         let mut visiting = HashSet::new();
         for (n, _) in nodes {
             let _ = dfs(n.as_str(), &kind_map, &succ, &mut memo, &mut visiting);
@@ -99,7 +102,9 @@ impl<T> PartialEq for Scheduled<T> {
 impl<T> Ord for Scheduled<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         // max-heap on CPP; tie-break by name for determinism
-        self.cpp.cmp(&other.cpp).then_with(|| self.name.cmp(&other.name))
+        self.cpp
+            .cmp(&other.cpp)
+            .then_with(|| self.name.cmp(&other.name))
     }
 }
 
@@ -146,13 +151,9 @@ mod tests {
             ("B".to_string(), NodeKind::Agent),
             ("C".to_string(), NodeKind::Verify),
         ];
-        let edges = vec![
-            WorkflowEdge::new("A", "B"),
-            WorkflowEdge::new("A", "C"),
-        ];
+        let edges = vec![WorkflowEdge::new("A", "B"), WorkflowEdge::new("A", "C")];
         let plan = SchedulerPlan::compute(&nodes, &edges);
         assert!(plan.cpp["B"] > plan.cpp["C"]);
         assert!(plan.cpp["A"] > plan.cpp["B"]);
     }
 }
-

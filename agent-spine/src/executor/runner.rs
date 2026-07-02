@@ -419,10 +419,7 @@ impl<S: WorkflowState> Executor<S> {
                 .iter()
                 .map(|t| (t.name.clone(), t.kind.clone()))
                 .collect();
-            let plan = SchedulerPlan::compute(
-                &node_kinds,
-                self.workflow.definition().edges(),
-            );
+            let plan = SchedulerPlan::compute(&node_kinds, self.workflow.definition().edges());
 
             let mut queue = ReadyQueue::new();
             for task in node_tasks {
